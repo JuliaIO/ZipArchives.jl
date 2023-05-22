@@ -1,0 +1,10 @@
+#Mac OS X
+*.DS_Store
+
+#VS Code
+/.vscode/
+
+/test/Manifest.toml
+/Manifest.toml
+fixture
+*.cov
