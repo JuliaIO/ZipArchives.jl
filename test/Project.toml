@@ -1,3 +1,7 @@
 [deps]
+LibArchive_jll = "1e303b3e-d4db-56ce-88c4-91e52606a1a8"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 ZipArchives = "49080126-0e18-4c2a-b176-c102e4b3760c"
+ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
+p7zip_jll = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
