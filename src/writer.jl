@@ -6,7 +6,6 @@ mutable struct ZipWriter <: IO
     entries::Vector{EntryInfo}
     partial_entry::Union{Nothing, EntryInfo}
     closed::Bool
-    mark::Int64
     function ZipWriter(io::IO; own_io::Bool=false)
         new(io, own_io, [], nothing, false, -1)
     end
@@ -32,6 +31,51 @@ end
 
 Base.isopen(w::ZipWriter) = !w.closed
 
+Base.isreadable(::ZipWriter) = false
+
+Base.iswritable(w::ZipWriter) = !isnothing(w.partial_entry)
+
+function zip_newfile(w::ZipWriter, name::AbstractString)
+    iswritable(w) && zip_commitfile(w)
+    @assert !iswritable(w)
+    
+    
+end
+
+Base.write(w::ZipWriter, x::UInt8) = write(w, Ref(x))
+
+function assert_writeable(w::ZipWriter)
+    if !iswritable(w)
+        if isopen(w)
+            throw(ArgumentError("ZipWriter not writable, call zip_newfile first"))
+        else
+            throw(ArgumentError("ZipWriter is closed"))
+        end
+    end
+end
+
+function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::Int
+    iszero(n) && return 0
+    (n > typemax(Int)) && throw(ArgumentError("too many bytes. Tried to write $n bytes"))
+    assert_writeable(w)
+    # TODO add support for compression here
+    nb::UInt = unsafe_write(w._io, p, n)
+    w.partial_entry.crc32 = unsafe_crc32(p, nb, w.partial_entry.crc32)
+    w.partial_entry.uncompressed_size += nb
+    nb
+end
+
+function Base.position(w::ZipWriter)::Int64
+    assert_writeable(w)
+    w.partial_entry.uncompressed_size
+end
+
+function zip_commitfile(w)
+end
+
+function write_central_dir(w)
+end
+
 function Base.close(w::ZipWriter)
     if !w.closed
         try
@@ -48,40 +92,4 @@ function Base.close(w::ZipWriter)
         end
         nothing
     end
-end
-
-Base.isreadable(::ZipWriter) = false
-
-Base.iswritable(w::ZipWriter) = !isnothing(w.partial_entry)
-
-function zip_newfile(w::ZipWriter, name::AbstractString)
-
-    
-end
-
-Base.write(w::ZipWriter, x::UInt8) = write(w, Ref(x))
-
-function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::UInt
-    iszero(n) && return 0
-    if !iswritable(w)
-        if isopen(w)
-            throw(ArgumentError("write failed, call zip_newfile first"))
-        else
-            throw(ArgumentError("ZipWriter is closed"))
-        end
-    end
-    # TODO add support for compression here
-    nb::UInt = unsafe_write(w._io, p, n)
-    new_crc32 = unsafe_crc32(p, nb, w.partial_entry.crc32)
-    # TODO what if overflow??
-    new_uncompressed_size = nb + w.partial_entry.uncompressed_size
-    nb
-end
-
-"""
-Base.position(w::ZipWriter)::Int64
-"""
-
-
-
 end
