@@ -7,4 +7,5 @@ version = "0.1.0"
 SaferIntegers = "88634af6-177f-5301-88b8-7819386cfa38"
 
 [compat]
+SaferIntegers = "3"
 julia = "1.6.0"
