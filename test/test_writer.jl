@@ -36,6 +36,12 @@ ZipWriter(joinpath(tmp, "twofiles.zip")) do w
     write(w, "I am data inside test2.txt in the zip file")
 end
 
+ZipWriter(joinpath(tmp, "3files-zip_writefile.zip")) do w
+    zip_writefile(w, "test1.txt",  codeunits("I am data inside test1.txt in the zip file"))
+    zip_writefile(w, "test2.txt",  codeunits("I am data inside test2.txt in the zip file"))
+    zip_writefile(w, "empty.txt",  codeunits(""))
+end
+
 ZipWriter(joinpath(tmp, "twofiles64.zip"); force_zip64=true) do w
     zip_newfile(w, "test1.txt")
     write(w, "I am data inside test1.txt in the zip file")
@@ -43,7 +49,7 @@ ZipWriter(joinpath(tmp, "twofiles64.zip"); force_zip64=true) do w
     write(w, "I am data inside test2.txt in the zip file")
 end
 
-ZipWriter(joinpath(tmp, "twofiles64.zip"); force_zip64=true) do w
+ZipWriter(joinpath(tmp, "4files64.zip"); force_zip64=true) do w
     zip_newfile(w, "test1.txt")
     write(w, "I am data inside test1.txt in the zip file")
     zip_newfile(w, "empty1.txt")

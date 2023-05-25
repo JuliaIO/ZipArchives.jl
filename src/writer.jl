@@ -191,25 +191,9 @@ function Base.position(w::ZipWriter)::Int64
     w.partial_entry.entry.uncompressed_size
 end
 
-function zip_commitfile(w::ZipWriter)::EntryInfo
-    assert_writeable(w)
-    pe::PartialEntry = w.partial_entry
-    entry::EntryInfo = pe.entry
-    w.partial_entry = nothing
-    # If some error happens, the file will be partially written,
-    # but not included in the central directory.
-    # Finish the compressing here, but don't close underlying IO.
-    try
-        write(pe.transcoder, TranscodingStreams.TOKEN_END)
-    finally
-        # Prevent memory leak maybe.
-        TranscodingStreams.finalize(pe.transcoder.codec)
-    end
-
-    pe.entry.compressed_size = position(w._io) - entry.offset - pe.local_header_size
-    # normalize zip64 usage
+function normalize_zip64!(entry::EntryInfo, force_zip64=false)
     use_zip64 = (
-        need_zip64(entry) ||
+        force_zip64 ||
         entry.compressed_size   > 2^31-1 ||
         entry.uncompressed_size > 2^31-1 ||
         entry.offset > 2^31-1
@@ -227,6 +211,26 @@ function zip_commitfile(w::ZipWriter)::EntryInfo
         p += write_buffer(b, p, entry.offset)
         entry.central_extras = [ExtraField(0x0001, b)]
     end
+end
+
+function zip_commitfile(w::ZipWriter)::EntryInfo
+    assert_writeable(w)
+    pe::PartialEntry = w.partial_entry
+    entry::EntryInfo = pe.entry
+    w.partial_entry = nothing
+    # If some error happens, the file will be partially written,
+    # but not included in the central directory.
+    # Finish the compressing here, but don't close underlying IO.
+    try
+        write(pe.transcoder, TranscodingStreams.TOKEN_END)
+    finally
+        # Prevent memory leak maybe.
+        TranscodingStreams.finalize(pe.transcoder.codec)
+    end
+
+    pe.entry.compressed_size = position(w._io) - entry.offset - pe.local_header_size
+    normalize_zip64!(entry, w.force_zip64)
+    
     # note, make sure never to change the partial_entry except for these three things.
     @assert normal_local_header_size(entry) == pe.local_header_size
     if !all(iszero, (entry.uncompressed_size, entry.compressed_size, entry.crc32))
@@ -237,6 +241,37 @@ function zip_commitfile(w::ZipWriter)::EntryInfo
         write_local_header(w._io, entry)
         seek(w._io, cur_offset)
     end
+    push!(w.entries, entry)
+    entry
+end
+
+"""
+Write a full file.
+Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
+`w` isn't writable after.
+"""
+function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8})
+    @argcheck isopen(w)
+    namestr = String(name)
+    @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
+    # TODO warn if name is problematic
+    iswritable(w) && zip_commitfile(w)
+    @assert !iswritable(w)
+    io = w._io
+    offset = position(io)
+    # TODO calculate crc32 even if no pointer method on data
+    crc32 = GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), UInt32(0))
+    entry = EntryInfo(;
+        name=namestr,
+        offset,
+        compressed_size=length(data),
+        uncompressed_size=length(data),
+        crc32,
+    )
+    normalize_zip64!(entry, w.force_zip64)
+    write_local_header(io, entry)
+    write(io, data) == length(data) || error("short write")
+    @assert !iswritable(w)
     push!(w.entries, entry)
     entry
 end

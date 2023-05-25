@@ -34,7 +34,7 @@ using Test
     end
 
     # Read a zip file with `ZipReader`
-    ZipReader(filename) do r
+    ZipFileReader(filename) do r
         @test map(x->x.name, r.entries) == ["test1.txt", "empty.txt", "test2.txt"]
         zip_openentry(r, 1) do io
             @test read(io, String) == "I am data inside test1.txt in the zip file"

@@ -53,3 +53,13 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
         crc, p, nb,
     )
 end
+
+struct ZipFileReader
+    entries::Vector{EntryInfo}
+    ref_counter::Ref{Int}
+end
+
+function ZipFileReader(filename::AbstractString)
+    io = open(filename)
+
+end
