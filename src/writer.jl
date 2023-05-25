@@ -130,8 +130,6 @@ function write_local_header(io::IO, entry::EntryInfo)
     n
 end
 
-Base.write(w::ZipWriter, x::UInt8) = write(w, Ref(x))
-
 function assert_writeable(w::ZipWriter)
     if !iswritable(w)
         if isopen(w)
@@ -141,6 +139,8 @@ function assert_writeable(w::ZipWriter)
         end
     end
 end
+
+Base.write(w::ZipWriter, x::UInt8) = write(w, Ref(x))
 
 function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::Int
     iszero(n) && return 0
