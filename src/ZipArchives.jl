@@ -1,5 +1,7 @@
 module ZipArchives
 
+include("constants.jl")
+
 include("reader.jl")
 
 include("writer.jl")

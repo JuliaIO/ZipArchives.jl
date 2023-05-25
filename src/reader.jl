@@ -10,10 +10,10 @@ Info about an entry in a zip file.
 """
 Base.@kwdef mutable struct EntryInfo
     version_made::UInt8 = 63 # version made by: zip 6.3
-    os::UInt8 = 3 # UNIX
+    os::UInt8 = UNIX
     version_needed::UInt16 = 20
     bit_flags::UInt16 = 1<<11 # general purpose bit flag: 11 UTF-8 encoding
-    method::UInt16 = 0 # compression method
+    method::UInt16 = Store # compression method
     dos_time::UInt16 = 0 # last mod file time
     dos_date::UInt16 = 0 # last mod file date
     crc32::UInt32 = 0
@@ -38,6 +38,14 @@ need_zip64(entry::EntryInfo)::Bool = (
     entry.offset_zip64 ||
     entry.n_disk_zip64
 )
+
+"""
+Return the size of a typical local header for an entry.
+Note, zip files in the wild may have shorter 
+or longer local headers if they have a different 
+amount of local extra fields.
+"""
+normal_local_header_size(entry::EntryInfo) = 50 + ncodeunits(entry.name)
 
 function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     ccall((:crc32_z, Zlib_jll.libz),

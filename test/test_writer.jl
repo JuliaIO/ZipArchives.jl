@@ -21,6 +21,14 @@ ZipWriter(joinpath(tmp, "onefile.zip")) do w
     write(w, "I am data inside test1.txt in the zip file")
 end
 
+ZipWriter(joinpath(tmp, "compressedfiles.zip")) do w
+    zip_newfile(w, "test1.txt"; compression_method=ZipArchives.Deflate)
+    write(w, "I am compressed data inside test1.txt in the zip file")
+    zip_newfile(w, "test2.txt"; compression_method=ZipArchives.Deflate, compression_level=9)
+    write(w, "I am compressed data inside test2.txt in the zip file")
+    zip_newfile(w, "empty.txt"; compression_method=ZipArchives.Deflate, compression_level=9)
+end
+
 ZipWriter(joinpath(tmp, "twofiles.zip")) do w
     zip_newfile(w, "test1.txt")
     write(w, "I am data inside test1.txt in the zip file")

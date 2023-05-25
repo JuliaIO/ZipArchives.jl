@@ -1,10 +1,18 @@
 using ArgCheck
+using CodecZlib
+using TranscodingStreams
+
+struct PartialEntry
+    entry::EntryInfo
+    local_header_size::Int
+    transcoder::Union{NoopStream, DeflateCompressorStream}
+end
 
 mutable struct ZipWriter <: IO
     _io::IO
     _own_io::Bool
     entries::Vector{EntryInfo}
-    partial_entry::Union{Nothing, EntryInfo}
+    partial_entry::Union{Nothing, PartialEntry}
     closed::Bool
     force_zip64::Bool
     function ZipWriter(io::IO; own_io::Bool=false, force_zip64::Bool=false)
@@ -36,7 +44,10 @@ Base.isreadable(::ZipWriter) = false
 
 Base.iswritable(w::ZipWriter) = !isnothing(w.partial_entry)
 
-function zip_newfile(w::ZipWriter, name::AbstractString)
+function zip_newfile(w::ZipWriter, name::AbstractString; 
+        compression_method::UInt16=Store,
+        compression_level::Union{Nothing,Int}=nothing,
+    )
     @argcheck isopen(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
@@ -52,8 +63,28 @@ function zip_newfile(w::ZipWriter, name::AbstractString)
         entry.offset_zip64 = true
         entry.version_needed = 45
     end
-    write_local_header(io, entry)
-    w.partial_entry = entry
+    codec, level_bits = if compression_method==Store
+        (Noop(), 0)
+    elseif compression_method==Deflate
+        if isnothing(compression_level)
+            compression_level = -1
+        end
+        @argcheck compression_level ∈ (-1:9)
+        (
+            DeflateCompressor(;level = compression_level),
+            deflate_level_bits(compression_level),
+        )
+    else
+        throw(ArgumentError("compression_method must be Deflate or Store"))
+    end
+    entry.method = compression_method
+    entry.bit_flags |= level_bits
+    local_header_size = write_local_header(io, entry)
+    w.partial_entry = PartialEntry(
+        entry,
+        local_header_size,
+        TranscodingStream(codec, io),
+    )
     @assert iswritable(w)
     nothing
 end
@@ -78,11 +109,11 @@ function write_buffer(b::Vector{UInt8}, p::Int, x::String)::Int
 end
 
 """
-Always writes 50 + ncodeunits(entry.name) bytes
+Always writes normal_local_header_size(entry) bytes
 """
 function write_local_header(io::IO, entry::EntryInfo)
     name_len = ncodeunits(entry.name)
-    b = zeros(UInt8, 50+name_len)
+    b = zeros(UInt8, normal_local_header_size(entry))
     p = 1
     # Check for unsupported bit flags
     @argcheck iszero(entry.bit_flags & 1<<3) "writing data descriptor not supported."
@@ -147,23 +178,35 @@ function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::Int
     iszero(n) && return 0
     (n > typemax(Int)) && throw(ArgumentError("too many bytes. Tried to write $n bytes"))
     assert_writeable(w)
-    # TODO add support for compression here
-    nb::UInt = unsafe_write(w._io, p, n)
-    w.partial_entry.crc32 = unsafe_crc32(p, nb, w.partial_entry.crc32)
-    w.partial_entry.uncompressed_size += nb
-    w.partial_entry.compressed_size += nb
+    pe::PartialEntry = w.partial_entry
+    nb::UInt = unsafe_write(pe.transcoder, p, n)
+    pe.entry.crc32 = unsafe_crc32(p, nb, pe.entry.crc32)
+    pe.entry.uncompressed_size += nb
+    # pe.entry.compressed_size is updated in zip_commitfile
     nb
 end
 
 function Base.position(w::ZipWriter)::Int64
     assert_writeable(w)
-    w.partial_entry.uncompressed_size
+    w.partial_entry.entry.uncompressed_size
 end
 
 function zip_commitfile(w::ZipWriter)::EntryInfo
     assert_writeable(w)
-    entry::EntryInfo = w.partial_entry
-    # TODO finish the compressing here.
+    pe::PartialEntry = w.partial_entry
+    entry::EntryInfo = pe.entry
+    w.partial_entry = nothing
+    # If some error happens, the file will be partially written,
+    # but not included in the central directory.
+    # Finish the compressing here, but don't close underlying IO.
+    try
+        write(pe.transcoder, TranscodingStreams.TOKEN_END)
+    finally
+        # Prevent memory leak maybe.
+        TranscodingStreams.finalize(pe.transcoder.codec)
+    end
+
+    pe.entry.compressed_size = position(w._io) - entry.offset - pe.local_header_size
     # normalize zip64 usage
     use_zip64 = (
         need_zip64(entry) ||
@@ -185,6 +228,7 @@ function zip_commitfile(w::ZipWriter)::EntryInfo
         entry.central_extras = [ExtraField(0x0001, b)]
     end
     # note, make sure never to change the partial_entry except for these three things.
+    @assert normal_local_header_size(entry) == pe.local_header_size
     if !all(iszero, (entry.uncompressed_size, entry.compressed_size, entry.crc32))
         # Must go back and update the local header if any data was written.
         cur_offset = position(w._io)
@@ -194,7 +238,6 @@ function zip_commitfile(w::ZipWriter)::EntryInfo
         seek(w._io, cur_offset)
     end
     push!(w.entries, entry)
-    w.partial_entry = nothing
     entry
 end
 
@@ -282,7 +325,7 @@ function write_central_dir(w)
         p += write_buffer(b, p, 0x06064b50) # zip64 end of central dir signature
         p += write_buffer(b, p, UInt64(56-12)) # size of zip64 end of central directory record
         p += write_buffer(b, p, UInt8(63)) # version made by zip 6.3
-        p += write_buffer(b, p, UInt8(3)) # version made by UNIX
+        p += write_buffer(b, p, UNIX) # version made by OS
         p += write_buffer(b, p, UInt16(45)) # version needed to extract
         p += write_buffer(b, p, UInt32(0)) # number of this disk
         p += write_buffer(b, p, UInt32(0)) # number of the disk with the start of the central directory
