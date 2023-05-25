@@ -40,8 +40,7 @@ function unzip_python(zippath, dirpath)
     zipfile = PyCall.pyimport("zipfile")
     PyCall.@pywith zipfile.ZipFile(zippath) as f begin
         isnothing(f.testzip()) || error(string(f.testzip()))
-        f.eusing ZipArchives
-        using Testxtractall(dirpath)
+        f.extractall(dirpath)
     end
     nothing
 end

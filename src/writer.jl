@@ -26,7 +26,7 @@ function ZipWriter(f::Function, io::IO; kwargs...)
     w
 end
 
-function ZipWriter(f::Function, filename::AbstractString)
+function ZipWriter(f::Function, filename::AbstractString; kwargs...)
     ZipWriter(f, Base.open(filename, "w"); own_io=true, kwargs...)
 end
 
@@ -50,6 +50,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString)
         entry.c_size_zip64 = true
         entry.u_size_zip64 = true
         entry.offset_zip64 = true
+        entry.version_needed = 45
     end
     write_local_header(io, entry)
     w.partial_entry = entry
@@ -69,7 +70,7 @@ function write_buffer(b::Vector{UInt8}, p::Int, x::Integer)::Int
     sizeof(x)
 end
 function write_buffer(b::Vector{UInt8}, p::Int, x::AbstractVector{UInt8})::Int
-    b[p:p+length(x)] .= x
+    b[p:p+length(x)-1] .= x
     length(x)
 end
 function write_buffer(b::Vector{UInt8}, p::Int, x::String)::Int
@@ -110,7 +111,7 @@ function write_local_header(io::IO, entry::EntryInfo)
     end
     p += write_buffer(b, p, UInt16(name_len)) # file name length
     p += write_buffer(b, p, 0x0014) # extra field length
-    p += write_buffer(b, p, name)
+    p += write_buffer(b, p, entry.name)
     if use_zip64
         p += write_buffer(b, p, 0x0001) # Zip 64 Header ID
         p += write_buffer(b, p, 0x0010) # Local Zip 64 Length
@@ -150,6 +151,7 @@ function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::Int
     nb::UInt = unsafe_write(w._io, p, n)
     w.partial_entry.crc32 = unsafe_crc32(p, nb, w.partial_entry.crc32)
     w.partial_entry.uncompressed_size += nb
+    w.partial_entry.compressed_size += nb
     nb
 end
 
@@ -188,7 +190,7 @@ function zip_commitfile(w::ZipWriter)::EntryInfo
         cur_offset = position(w._io)
         # TODO add better error message about requiring seekable IO if this fails
         seek(w._io, entry.offset)
-        write_local_header(io, entry)
+        write_local_header(w._io, entry)
         seek(w._io, cur_offset)
     end
     push!(w.entries, entry)
@@ -201,7 +203,7 @@ Just write whatever is in entry, don't normalize or check for issues here.
 """
 function write_central_header(io::IO, entry::EntryInfo)
     name_len::UInt16 = ncodeunits(entry.name)
-    extra_len::UInt16 = sum(entry.central_extras) do extra::ExtraField
+    extra_len::UInt16 = sum(entry.central_extras; init=0) do extra::ExtraField
         4 + length(extra.data)
     end
     comment_len::UInt16 = ncodeunits(entry.comment)
@@ -263,7 +265,7 @@ function write_central_dir(w)
     end
     end_of_central_dir = position(io)
     size_of_central_dir = end_of_central_dir - start_of_central_dir
-    number_of_entries = length(r.files)
+    number_of_entries = length(w.entries)
     use_eocd64 = (
         w.force_zip64 ||
         number_of_entries > 2^15 - 1 ||
@@ -280,7 +282,7 @@ function write_central_dir(w)
         p += write_buffer(b, p, 0x06064b50) # zip64 end of central dir signature
         p += write_buffer(b, p, UInt64(56-12)) # size of zip64 end of central directory record
         p += write_buffer(b, p, UInt8(63)) # version made by zip 6.3
-        p += write_buffer(b, p, UInt8(3<<8)) # version made by UNIX
+        p += write_buffer(b, p, UInt8(3)) # version made by UNIX
         p += write_buffer(b, p, UInt16(45)) # version needed to extract
         p += write_buffer(b, p, UInt32(0)) # number of this disk
         p += write_buffer(b, p, UInt32(0)) # number of the disk with the start of the central directory

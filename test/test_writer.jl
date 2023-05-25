@@ -8,8 +8,41 @@ if Debug
 end
 
 
+# Write some zip files
+ZipWriter(joinpath(tmp, "empty.zip")) do w
+end
 
+ZipWriter(joinpath(tmp, "emptyfile.zip")) do w
+    zip_newfile(w, "empty.txt")
+end
 
+ZipWriter(joinpath(tmp, "onefile.zip")) do w
+    zip_newfile(w, "test1.txt")
+    write(w, "I am data inside test1.txt in the zip file")
+end
+
+ZipWriter(joinpath(tmp, "twofiles.zip")) do w
+    zip_newfile(w, "test1.txt")
+    write(w, "I am data inside test1.txt in the zip file")
+    zip_newfile(w, "test2.txt")
+    write(w, "I am data inside test2.txt in the zip file")
+end
+
+ZipWriter(joinpath(tmp, "twofiles64.zip"); force_zip64=true) do w
+    zip_newfile(w, "test1.txt")
+    write(w, "I am data inside test1.txt in the zip file")
+    zip_newfile(w, "test2.txt")
+    write(w, "I am data inside test2.txt in the zip file")
+end
+
+ZipWriter(joinpath(tmp, "twofiles64.zip"); force_zip64=true) do w
+    zip_newfile(w, "test1.txt")
+    write(w, "I am data inside test1.txt in the zip file")
+    zip_newfile(w, "empty1.txt")
+    zip_newfile(w, "test2.txt")
+    write(w, "I am data inside test2.txt in the zip file")
+    zip_newfile(w, "empty2.txt")
+end
 
 # This defines a vector of functions in `unzippers`
 # These functions take a zipfile path and a directory path
