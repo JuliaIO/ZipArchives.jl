@@ -54,12 +54,73 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
+# Copied from ZipFile.jl
+readle(io::IO, ::Type{UInt64}) = htol(read(io, UInt64))
+readle(io::IO, ::Type{UInt32}) = htol(read(io, UInt32))
+readle(io::IO, ::Type{UInt16}) = htol(read(io, UInt16))
+
 struct ZipFileReader
     entries::Vector{EntryInfo}
-    ref_counter::Ref{Int}
+    _io::IO
+    _ref_counter::Ref{Int}
+    _lock::ReentrantLock
 end
 
 function ZipFileReader(filename::AbstractString)
     io = open(filename)
+    try # parse entries
+        fsize = filesize(io)
+        # 1st find end of central dir section
+        eocd_offset::Int64 = let 
+            # First assume comment is length zero
+            @argcheck fsize ≥ 22
+            seek(io, fsize-22)
+            local b = read(io, zeros(UInt8, 22))
+            check_comment_len_valid(b, comment_len) = (
+                EOCDSig == @view(b[end-21-comment_len:end-18-comment_len]) &&
+                comment_len%UInt8 == b[end-1-comment_len] &&
+                UInt8(comment_len>>8) == b[end-comment_len]
+            )
+            if check_comment_len_valid(b, 0)
+                # No Zip comment fast path
+                fsize-22
+            else
+                # There maybe is a Zip comment slow path
+                @argcheck fsize > 22
+                local max_comment_len::Int = min(0xFFFF, fsize-22)
+                seek(io, fsize - (max_comment_len+22))
+                b = read(io, zeros(UInt8, (max_comment_len+22)))
+                local comment_len = 1
+                while comment_len ≤ max_comment_len && !check_comment_len_valid(b, comment_len)
+                    comment_len += 1
+                end
+                @argcheck check_comment_len_valid(b, comment_len)
+                fsize-22-comment_len
+            end
+        end
+        # 2nd figure out if 
+        seek(io, eocd_offset+4)
+        disknum16 = readle(io, UInt16)
+        cd_disk16 = readle(io, UInt16)
+        num_entries_this_disk16 = readle(io, UInt16)
+        num_entries16 = readle(io, UInt16)
+        central_dir_size32 = readle(io, UInt32)
+        central_dir_offset32 = readle(io, UInt32)
+
+
+
+
+
+
+
+
+        seek()
+    catch # close io if there is an error parsing entries
+        try
+            close(io)
+        finally
+            throw(ArgumentError("Failed to parse central directory"))
+        end
+    end
 
 end
