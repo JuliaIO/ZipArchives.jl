@@ -146,7 +146,7 @@ function parse_central_directory(io::IO)
     central_dir_offset32 = readle(io, UInt32)
     maybe_eocd64 = (
         any( ==(-1%UInt16), [
-            disknum16,
+            disk16,
             cd_disk16,
             num_entries_thisdisk16,
             num_entries16,
@@ -246,6 +246,7 @@ function parse_central_directory(io::IO)
         @argcheck ncodeunits(entry.name) == name_len
 
         #reading the variable sized extra fields
+        local central_extras = entry.central_extras
         local extras_bytes_left::Int = extras_len
         while extras_bytes_left ≥ 4
             local id = readle(io, UInt16)
@@ -255,7 +256,7 @@ function parse_central_directory(io::IO)
             local data = read(io, data_size)
             @argcheck length(data) == data_size
             extras_bytes_left -= data_size
-            push!(entry.central_extras, ExtraField(id, data))
+            push!(central_extras, ExtraField(id, data))
         end
         @argcheck iszero(extras_bytes_left)
 

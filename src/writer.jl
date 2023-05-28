@@ -112,7 +112,7 @@ end
 Always writes normal_local_header_size(entry) bytes
 """
 function write_local_header(io::IO, entry::EntryInfo)
-    name_len = ncodeunits(entry.name)
+    name_len::UInt16 = ncodeunits(entry.name)
     b = zeros(UInt8, normal_local_header_size(entry))
     p = 1
     # Check for unsupported bit flags
@@ -140,7 +140,7 @@ function write_local_header(io::IO, entry::EntryInfo)
         p += write_buffer(b, p, UInt32(entry.compressed_size))
         p += write_buffer(b, p, UInt32(entry.uncompressed_size))
     end
-    p += write_buffer(b, p, UInt16(name_len)) # file name length
+    p += write_buffer(b, p, name_len) # file name length
     p += write_buffer(b, p, 0x0014) # extra field length
     p += write_buffer(b, p, entry.name)
     if use_zip64
@@ -211,6 +211,7 @@ function normalize_zip64!(entry::EntryInfo, force_zip64=false)
         p += write_buffer(b, p, entry.offset)
         entry.central_extras = [ExtraField(0x0001, b)]
     end
+    nothing
 end
 
 function zip_commitfile(w::ZipWriter)::EntryInfo
@@ -285,7 +286,7 @@ function write_central_header(io::IO, entry::EntryInfo)
         4 + length(extra.data)
     end
     comment_len::UInt16 = ncodeunits(entry.comment)
-    b = zeros(UInt8, 46 + name_len + extra_len + comment_len)
+    b = zeros(UInt8, 46 + Int(name_len) + Int(extra_len) + Int(comment_len))
     p = 1
     p += write_buffer(b, p, 0x02014b50) # central file header signature
     p += write_buffer(b, p, entry.version_made)
@@ -334,18 +335,16 @@ function write_central_header(io::IO, entry::EntryInfo)
     n
 end
 
-function write_central_dir(w)
-    @assert !iswritable(w) && isopen(w)
-    io = w._io
+function write_footer(io::IO, entries::Vector{EntryInfo}; force_zip64::Bool=false)
     start_of_central_dir = position(io)
-    for entry in w.entries
+    for entry in entries
         write_central_header(io, entry)
     end
     end_of_central_dir = position(io)
     size_of_central_dir = end_of_central_dir - start_of_central_dir
-    number_of_entries = length(w.entries)
+    number_of_entries = length(entries)
     use_eocd64 = (
-        w.force_zip64 ||
+        force_zip64 ||
         number_of_entries > typemax(Int16) ||
         size_of_central_dir > typemax(Int32) ||
         start_of_central_dir > typemax(Int32)
@@ -387,7 +386,7 @@ function write_central_dir(w)
     @assert p == length(b)+1
     n = write(io, b)
     n == p-1 || error("short write")
-    n
+    tailsize + size_of_central_dir
 end
 
 function Base.close(w::ZipWriter)
@@ -397,7 +396,7 @@ function Base.close(w::ZipWriter)
         finally
             w.partial_entry = nothing
             try
-                write_central_dir(w)
+                write_footer(w._io, w.entries; w.force_zip64)
             finally
                 @assert isnothing(w.partial_entry)
                 w.closed = true

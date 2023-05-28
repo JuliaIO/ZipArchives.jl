@@ -1,6 +1,6 @@
 using ZipArchives
 using Test
-
+using Random
 
 @testset "find_end_of_central_directory_record unit tests" begin
     find_eocd = ZipArchives.find_end_of_central_directory_record
@@ -80,3 +80,42 @@ using Test
 end
 
 
+@testset "parse_central_directory unit tests" begin
+    # Empty zip file
+    io = IOBuffer([b"PK\x05\x06"; zeros(UInt8,2*4+4*2+2)])
+    (;entries, central_dir_offset) = ZipArchives.parse_central_directory(io)
+    @test isempty(entries)
+    @test iszero(central_dir_offset)
+
+    io = IOBuffer([b"a"; b"PK\x05\x06"; zeros(UInt8,2*4+4*2+2)])
+    (;entries, central_dir_offset) = ZipArchives.parse_central_directory(io)
+    @test isempty(entries)
+    @test central_dir_offset == 0
+
+    io = IOBuffer([b"PK\x01\x02"; b"PK\x05\x06"; zeros(UInt8,2*4+4*2+2)])
+    @test_logs (:warn,"There may be some entries that are being ignored") (;entries, central_dir_offset) = ZipArchives.parse_central_directory(io)
+    @test isempty(entries)
+    @test central_dir_offset == 0
+
+    for trial in 1:200
+        n_entries = rand([0:20; 0:20; [100, 2^16-1, 2^16, 2^16+1,]])
+        my_rand(T::Type{<:Integer}) = rand(T)
+        my_rand(T::Type{String}) = String(rand(UInt8, rand(0:2^8)))
+        my_rand(T::Type{Vector{ZipArchives.ExtraField}}) = []
+        in_entries = map(1:n_entries) do i
+            local e = ZipArchives.EntryInfo(map(my_rand, fieldtypes(ZipArchives.EntryInfo))...)
+            ZipArchives.normalize_zip64!(e, rand(Bool))
+            e
+        end
+        # @info "created entries"
+        n_padding = rand([0:20; [100, 2^16-2, 2^16-1, 2^16, 2^16+1, 2^16+2]])
+        # @show n_padding
+        io = IOBuffer(rand(UInt8,n_padding) ;read=true, write=true, truncate=false)
+        seekend(io)
+        ZipArchives.write_footer(io, in_entries; force_zip64=rand(Bool))
+        # @info "wrote footer"
+        (;entries, central_dir_offset) = ZipArchives.parse_central_directory(io)
+        @test length(in_entries) == length(entries)
+        @test central_dir_offset == n_padding
+    end
+end
