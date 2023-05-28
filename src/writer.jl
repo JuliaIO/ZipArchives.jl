@@ -194,9 +194,9 @@ end
 function normalize_zip64!(entry::EntryInfo, force_zip64=false)
     use_zip64 = (
         force_zip64 ||
-        entry.compressed_size   > 2^31-1 ||
-        entry.uncompressed_size > 2^31-1 ||
-        entry.offset > 2^31-1
+        entry.compressed_size   > typemax(Int32) ||
+        entry.uncompressed_size > typemax(Int32) ||
+        entry.offset > typemax(Int32)
     )
     if use_zip64
         entry.c_size_zip64 = true
@@ -346,9 +346,9 @@ function write_central_dir(w)
     number_of_entries = length(w.entries)
     use_eocd64 = (
         w.force_zip64 ||
-        number_of_entries > 2^15 - 1 ||
-        size_of_central_dir > 2^31 - 1 ||
-        start_of_central_dir > 2^31 - 1
+        number_of_entries > typemax(Int16) ||
+        size_of_central_dir > typemax(Int32) ||
+        start_of_central_dir > typemax(Int32)
     )
     tailsize = 22
     if use_eocd64

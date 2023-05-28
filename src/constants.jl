@@ -30,3 +30,5 @@ end
 
 "External file attributes are compatible with UNIX"
 const UNIX = UInt8(3)
+
+const EOCDSig = b"PK\x05\x06"
