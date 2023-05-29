@@ -35,16 +35,20 @@ end
 struct ZipFileReader
     entries::Vector{EntryInfo}
     central_dir_offset::Int64
-    _io::IO
+    _io::IOStream
     _ref_counter::Ref{Int64}
     _open::Ref{Bool}
     _lock::ReentrantLock
+    _fsize::Int64
 end
 
 mutable struct ZipFileEntryReader <: IO
     r::ZipFileReader
     p::Int64
+    mark::Int64
     offset::Int64
+    crc32::UInt32
+    compressed_size::Int64
     _open::Ref{Bool}
 end
 

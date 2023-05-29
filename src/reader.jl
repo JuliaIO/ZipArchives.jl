@@ -25,6 +25,11 @@ amount of local extra fields.
 """
 normal_local_header_size(entry::EntryInfo) = 50 + ncodeunits(entry.name)
 
+"""
+Return the minimum size of a local header for an entry.
+"""
+min_local_header_size(entry::EntryInfo) = 30 + ncodeunits(entry.name)
+
 zip_nentries(x::Union{ZipFileReader,ZipWriter}) = length(x.entries)
 zip_entryname(x::Union{ZipFileReader,ZipWriter}, i) = x.entries[i].name
 
@@ -303,6 +308,7 @@ function ZipFileReader(filename::AbstractString)
             Ref(1),
             Ref(true),
             ReentrantLock(),
+            filesize(io),
         )
     catch # close io if there is an error parsing entries
         close(io)
@@ -310,12 +316,54 @@ function ZipFileReader(filename::AbstractString)
     end
 end
 
-function zip_openentry(r::ZipFileReader, i::Integer)
-    e::EntryInfo = r.entries[i]
-    # TODO Validate entry
-    method = e.method
-    p::Int64 = 0
-    offset::Int64 = e.offset
+function ZipFileReader(f::Function, filename::AbstractString; kwargs...)
+    r = ZipFileReader(filename; kwargs...)
+    try
+        f(r)
+    finally
+        close(r)
+    end
+end
+
+Base.isopen(r::ZipFileReader)::Bool = r._open[]
+
+"""
+Throw an ArgumentError if entry cannot be extracted.
+"""
+function validate_entry(entry::EntryInfo, fsize::Int64)
+    if entry.method != Store && entry.method != Deflate
+        throw(ArgumentError("invalid compression method. Only Store and Deflate supported for now"))
+    end
+    # Check for unsupported bit flags
+    @argcheck iszero(entry.bit_flags & 1<<0) "encrypted files not supported"
+    @argcheck iszero(entry.bit_flags & 1<<5) "patched data not supported"
+    @argcheck iszero(entry.bit_flags & 1<<6) "encrypted files not supported"
+    @argcheck iszero(entry.bit_flags & 1<<13) "encrypted files not supported"
+    @argcheck entry.version_needed ≤ 45
+    # This allows for files to overlap, which sometimes can happen.
+    @argcheck entry.compressed_size ≤ fsize - min_local_header_size(entry)
+    if entry.method == Store
+        @argcheck entry.compressed_size == entry.uncompressed_size
+    end
+    @argcheck entry.offset ≤ (fsize - min_local_header_size(entry)) - entry.compressed_size
+    nothing
+end
+
+
+"""
+    zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
+
+Open entry `i` from `r` as a readable IO.
+
+Make sure to close this when done reading.
+
+Multiple entries can be open and read at the same time in multiple threads.
+The stream returned by this function should not be 
+read concurrently.
+"""
+function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
+    entry::EntryInfo = r.entries[i]
+    validate_entry(entry, r._fsize)
     @lock r._lock begin
         if r._open[]
             @assert r._ref_counter[] > 0 
@@ -324,10 +372,30 @@ function zip_openentry(r::ZipFileReader, i::Integer)
             throw(ArgumentError("ZipFileReader is closed"))
         end
     end
+    offset::Int64 = entry.offset
+    method = entry.method
+    @lock r._lock begin
+        # read and validate local header
+        seek(r._io, offset)
+        @argcheck readle(r._io, UInt32) == 0x04034b50
+        skip(r._io, 4)
+        @argcheck readle(r._io, UInt16) == method
+        skip(r._io, 4*4)
+        local_name_len = readle(r._io, UInt16)
+        @argcheck local_name_len == ncodeunits(entry.name)
+        extra_len = readle(r._io, UInt16)
+        @argcheck String(read(r._io, local_name_len)) == entry.name
+        skip(r._io, extra_len)
+        offset += 30 + extra_len + local_name_len
+        @argcheck offset + entry.compressed_size ≤ r._fsize
+    end
     base_io = ZipFileEntryReader(
         r,
-        p,
+        0,
+        -1,
         offset,
+        entry.crc32,
+        entry.compressed_size,
         Ref(true),
     )
     try
@@ -344,12 +412,61 @@ function zip_openentry(r::ZipFileReader, i::Integer)
     end
 end
 
-# Readable IO interface for ZipFileEntryReader
-Base.isopen(io::ZipFileEntryReader) = io._open[]
+function zip_openentry(f::Function, r::ZipFileReader, args...; kwargs...)
+    io = zip_openentry(r, args...; kwargs...)
+    try
+        f(io)
+    finally
+        close(io)
+    end
+end
 
-function Base.close(io::ZipFileEntryReader)
+# Readable IO interface for ZipFileEntryReader
+Base.isopen(io::ZipFileEntryReader)::Bool = io._open[]
+
+Base.bytesavailable(io::ZipFileEntryReader)::Int64 = io.compressed_size - io.p
+
+Base.iswritable(io::ZipFileEntryReader)::Bool = false
+
+Base.eof(io::ZipFileEntryReader)::Bool = iszero(bytesavailable(io))
+
+function Base.unsafe_read(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)::Nothing
+    @argcheck isopen(io)
+    n_real::UInt = min(n, bytesavailable(io))
+    r = io.r
+    read_start = io.offset+io.p
+    @lock r._lock begin
+        seek(r._io, read_start)
+        unsafe_read(r._io, p, n_real)
+    end
+    io.p += n_real
+    if n_real != n
+        @assert eof(io)
+        throw(EOFError())
+    end
+    nothing
+end
+
+Base.position(io::ZipFileEntryReader)::Int64 = io.p
+
+function Base.seek(io::ZipFileEntryReader, n::Integer)::ZipFileEntryReader
+    @argcheck Int64(n) ∈ 0:io.compressed_size
+    io.p = Int64(n)
+    return io
+end
+
+function Base.seekend(io::ZipFileEntryReader)::ZipFileEntryReader
+    io.p = io.compressed_size
+    return io
+end
+
+# Close will only actually close the internal io
+# when all ZipFileEntryReader and ZipFileReader referencing the io
+# call close.
+function Base.close(io::ZipFileEntryReader)::Nothing
     if isopen(io)
         io._open[] = false
+        io.p = io.compressed_size
         r = io.r
         @lock r._lock begin
             @assert r._ref_counter[] > 0 
@@ -363,10 +480,18 @@ function Base.close(io::ZipFileEntryReader)
     nothing
 end
 
-Base.bytesavailable(io::ZipFileEntryReader) = 0
-
-function Base.readavailable(io::ZipFileEntryReader)
-    r = io.r
-    @lock r._lock begin
+function Base.close(r::ZipFileReader)::Nothing
+    if isopen(r)
+        @lock r._lock begin
+            if r._open[]
+                r._open[] = false
+                @assert r._ref_counter[] > 0 
+                r._ref_counter[] -= 1
+                if r._ref_counter[] == 0
+                    close(r._io)
+                end
+            end
+        end
     end
+    nothing
 end
