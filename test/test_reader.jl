@@ -97,10 +97,10 @@ end
     @test isempty(entries)
     @test central_dir_offset == 0
 
-    for trial in 1:200
-        n_entries = rand([0:20; 0:20; [100, 2^16-1, 2^16, 2^16+1,]])
+    # randomized tests
+    for n_entries in [0:5; 0:5; [100, 2^16-1, 2^16, 2^16+1,]]
         my_rand(T::Type{<:Integer}) = rand(T)
-        my_rand(T::Type{String}) = String(rand(UInt8, rand(0:2^8)))
+        my_rand(T::Type{String}) = String(rand(UInt8, rand(0:2^6)))
         my_rand(T::Type{Vector{ZipArchives.ExtraField}}) = []
         in_entries = map(1:n_entries) do i
             local e = ZipArchives.EntryInfo(map(my_rand, fieldtypes(ZipArchives.EntryInfo))...)
@@ -115,7 +115,7 @@ end
         ZipArchives.write_footer(io, in_entries; force_zip64=rand(Bool))
         # @info "wrote footer"
         (;entries, central_dir_offset) = ZipArchives.parse_central_directory(io)
-        @test length(in_entries) == length(entries)
+        @test in_entries == entries
         @test central_dir_offset == n_padding
     end
 end

@@ -28,7 +28,15 @@ Base.@kwdef mutable struct EntryInfo
     external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
     name::String
     comment::String = ""
-    central_extras::Vector{ExtraField} = []
+    central_extras::Vector{ExtraField} = ExtraField[]
+end
+
+function Base.:(==)(x::EntryInfo, y::EntryInfo)
+    iox = IOBuffer()
+    write_central_header(iox, x)
+    ioy = IOBuffer()
+    write_central_header(ioy, y)
+    take!(iox) == take!(ioy)
 end
 
 
@@ -53,6 +61,9 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
         crc, p, nb,
     )
 end
+
+zip_nentries(x::Union{ZipFileReader,ZipWriter}) = length(x.entries)
+zip_entryname(x::Union{ZipFileReader,ZipWriter}, i) = x.entries[i].name
 
 # Copied from ZipFile.jl
 readle(io::IO, ::Type{UInt64}) = htol(read(io, UInt64))
@@ -260,8 +271,10 @@ function parse_central_directory(io::IO)
         end
         @argcheck iszero(extras_bytes_left)
 
-        entry.comment = String(read(io, comment_len))
-        @argcheck ncodeunits(entry.comment) == comment_len
+        if !iszero(comment_len)
+            entry.comment = String(read(io, comment_len))
+            @argcheck ncodeunits(entry.comment) == comment_len
+        end
 
         # Parse Zip64 and normalize disk number to 0
         # Assume no zip64 is used, unless the extra field is found
