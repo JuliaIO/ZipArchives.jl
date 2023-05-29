@@ -1,35 +1,5 @@
 import Zlib_jll
 
-struct ExtraField
-    id::UInt16
-    data::Vector{UInt8}
-end
-
-"""
-Info about an entry in a zip file.
-"""
-Base.@kwdef mutable struct EntryInfo
-    version_made::UInt8 = 63 # version made by: zip 6.3
-    os::UInt8 = UNIX
-    version_needed::UInt16 = 20
-    bit_flags::UInt16 = 1<<11 # general purpose bit flag: 11 UTF-8 encoding
-    method::UInt16 = Store # compression method
-    dos_time::UInt16 = 0 # last mod file time
-    dos_date::UInt16 = 0 # last mod file date
-    crc32::UInt32 = 0
-    compressed_size::UInt64 = 0
-    uncompressed_size::UInt64 = 0
-    offset::UInt64
-    c_size_zip64::Bool = false
-    u_size_zip64::Bool = false
-    offset_zip64::Bool = false
-    n_disk_zip64::Bool = false
-    internal_attrs::UInt16 = 0
-    external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
-    name::String
-    comment::String = ""
-    central_extras::Vector{ExtraField} = ExtraField[]
-end
 
 function Base.:(==)(x::EntryInfo, y::EntryInfo)
     iox = IOBuffer()
@@ -55,15 +25,15 @@ amount of local extra fields.
 """
 normal_local_header_size(entry::EntryInfo) = 50 + ncodeunits(entry.name)
 
+zip_nentries(x::Union{ZipFileReader,ZipWriter}) = length(x.entries)
+zip_entryname(x::Union{ZipFileReader,ZipWriter}, i) = x.entries[i].name
+
 function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     ccall((:crc32_z, Zlib_jll.libz),
         Culong, (Culong, Ptr{UInt8}, Csize_t),
         crc, p, nb,
     )
 end
-
-zip_nentries(x::Union{ZipFileReader,ZipWriter}) = length(x.entries)
-zip_entryname(x::Union{ZipFileReader,ZipWriter}, i) = x.entries[i].name
 
 # Copied from ZipFile.jl
 readle(io::IO, ::Type{UInt64}) = htol(read(io, UInt64))
@@ -322,24 +292,81 @@ function parse_central_directory(io::IO)
     (;entries, central_dir_offset)
 end
 
-struct ZipFileReader
-    entries::Vector{EntryInfo}
-    central_dir_offset::Int64
-    _io::IO
-    _ref_counter::Ref{Int}
-    _lock::ReentrantLock
-end
-
 function ZipFileReader(filename::AbstractString)
-    io = open(filename)
+    io = open(filename; lock=false)
     try # parse entries
         (;entries, central_dir_offset) = parse_central_directory(io)
-        ZipFileReader(entries, central_dir_offset, io, Ref(1), ReentrantLock())
+        ZipFileReader(
+            entries,
+            central_dir_offset,
+            io,
+            Ref(1),
+            Ref(true),
+            ReentrantLock(),
+        )
     catch # close io if there is an error parsing entries
-        try
-            close(io)
-        finally
-            throw(ArgumentError("failed to parse central directory"))
+        close(io)
+        rethrow()
+    end
+end
+
+function zip_openentry(r::ZipFileReader, i::Integer)
+    e::EntryInfo = r.entries[i]
+    # TODO Validate entry
+    method = e.method
+    p::Int64 = 0
+    offset::Int64 = e.offset
+    @lock r._lock begin
+        if r._open[]
+            @assert r._ref_counter[] > 0 
+            r._ref_counter[] += 1
+        else
+            throw(ArgumentError("ZipFileReader is closed"))
         end
+    end
+    base_io = ZipFileEntryReader(
+        r,
+        p,
+        offset,
+        Ref(true),
+    )
+    try
+        if method == Store
+            return NoopStream(base_io)
+        elseif method == Deflate
+            return DeflateDecompressorStream(base_io)
+        else
+            error("unknown compression method $method. Only Deflate and Store are supported.")
+        end
+    catch
+        close(base_io)
+        rethrow()
+    end
+end
+
+# Readable IO interface for ZipFileEntryReader
+Base.isopen(io::ZipFileEntryReader) = io._open[]
+
+function Base.close(io::ZipFileEntryReader)
+    if isopen(io)
+        io._open[] = false
+        r = io.r
+        @lock r._lock begin
+            @assert r._ref_counter[] > 0 
+            r._ref_counter[] -= 1
+            if r._ref_counter[] == 0
+                @assert !r._open[]
+                close(r._io)
+            end
+        end
+    end
+    nothing
+end
+
+Base.bytesavailable(io::ZipFileEntryReader) = 0
+
+function Base.readavailable(io::ZipFileEntryReader)
+    r = io.r
+    @lock r._lock begin
     end
 end

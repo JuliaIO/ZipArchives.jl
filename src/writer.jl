@@ -2,23 +2,7 @@ using ArgCheck
 using CodecZlib
 using TranscodingStreams
 
-struct PartialEntry
-    entry::EntryInfo
-    local_header_size::Int
-    transcoder::Union{NoopStream, DeflateCompressorStream}
-end
 
-mutable struct ZipWriter <: IO
-    _io::IO
-    _own_io::Bool
-    entries::Vector{EntryInfo}
-    partial_entry::Union{Nothing, PartialEntry}
-    closed::Bool
-    force_zip64::Bool
-    function ZipWriter(io::IO; own_io::Bool=false, force_zip64::Bool=false)
-        new(io, own_io, [], nothing, false, force_zip64)
-    end
-end
 
 function ZipWriter(filename::AbstractString; kwargs...)
     ZipWriter(Base.open(filename, "w"); own_io=true, kwargs...)
@@ -403,6 +387,6 @@ function Base.close(w::ZipWriter)
                 w._own_io && close(w._io)
             end
         end
-        nothing
     end
+    nothing
 end

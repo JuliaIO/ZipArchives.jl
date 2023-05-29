@@ -2,6 +2,8 @@ module ZipArchives
 
 include("constants.jl")
 
+include("types.jl")
+
 include("reader.jl")
 export ZipFileReader
 export zip_nentries
