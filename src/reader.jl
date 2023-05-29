@@ -300,7 +300,7 @@ end
 function ZipFileReader(filename::AbstractString)
     io = open(filename; lock=false)
     try # parse entries
-        (;entries, central_dir_offset) = parse_central_directory(io)
+        entries, central_dir_offset = parse_central_directory(io)
         ZipFileReader(
             entries,
             central_dir_offset,
@@ -364,7 +364,7 @@ read concurrently.
 function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     entry::EntryInfo = r.entries[i]
     validate_entry(entry, r._fsize)
-    @lock r._lock begin
+    lock(r._lock) do
         if r._open[]
             @assert r._ref_counter[] > 0 
             r._ref_counter[] += 1
@@ -374,7 +374,7 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     end
     offset::Int64 = entry.offset
     method = entry.method
-    @lock r._lock begin
+    lock(r._lock) do
         # read and validate local header
         seek(r._io, offset)
         @argcheck readle(r._io, UInt32) == 0x04034b50
@@ -435,7 +435,7 @@ function Base.unsafe_read(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)::Nothi
     n_real::UInt = min(n, bytesavailable(io))
     r = io.r
     read_start = io.offset+io.p
-    @lock r._lock begin
+    lock(r._lock) do
         seek(r._io, read_start)
         unsafe_read(r._io, p, n_real)
     end
@@ -468,7 +468,7 @@ function Base.close(io::ZipFileEntryReader)::Nothing
         io._open[] = false
         io.p = io.compressed_size
         r = io.r
-        @lock r._lock begin
+        lock(r._lock) do
             @assert r._ref_counter[] > 0 
             r._ref_counter[] -= 1
             if r._ref_counter[] == 0
@@ -482,7 +482,7 @@ end
 
 function Base.close(r::ZipFileReader)::Nothing
     if isopen(r)
-        @lock r._lock begin
+        lock(r._lock) do
             if r._open[]
                 r._open[] = false
                 @assert r._ref_counter[] > 0 
