@@ -6,6 +6,7 @@ include("types.jl")
 
 include("reader.jl")
 export ZipFileReader
+export ZipBufferReader
 export zip_nentries
 export zip_entryname
 export zip_openentry

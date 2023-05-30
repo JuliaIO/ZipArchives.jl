@@ -7,6 +7,7 @@ struct ExtraField
 end
 
 """
+This is an internal type.
 Info about an entry in a zip file.
 """
 Base.@kwdef mutable struct EntryInfo
@@ -42,6 +43,12 @@ struct ZipFileReader
     _fsize::Int64
 end
 
+"""
+This is an internal type.
+It reads the raw possibly compressed bytes.
+It should only be exposed wrapped in a 
+`TranscodingStream`
+"""
 mutable struct ZipFileEntryReader <: IO
     r::ZipFileReader
     p::Int64
@@ -50,6 +57,13 @@ mutable struct ZipFileEntryReader <: IO
     crc32::UInt32
     compressed_size::Int64
     _open::Ref{Bool}
+end
+
+
+struct ZipBufferReader{T<:AbstractVector{UInt8}}
+    entries::Vector{EntryInfo}
+    central_dir_offset::Int64
+    buffer::T
 end
 
 

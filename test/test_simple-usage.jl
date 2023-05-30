@@ -33,13 +33,25 @@ using Test
         write(w, "I am data inside test2.txt in the zip file")
     end
 
-    # Read a zip file with `ZipReader`
+    # Read a zip file with `ZipFileReader`
     ZipFileReader(filename) do r
         zip_nentries(r) == 3
         @test map(i->zip_entryname(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
         zip_openentry(r, 1) do io
             @test read(io, String) == "I am data inside test1.txt in the zip file"
         end
+    end
+
+    # Read a zip file with `ZipBufferReader` This doesn't need to be closed.
+    # It also is much faster for multithreaded reading.
+    data = read(filename)
+    # After passing an array to ZipBufferReader
+    # make sure to never modify the array
+    r = ZipBufferReader(data)
+    zip_nentries(r) == 3
+    @test map(i->zip_entryname(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
+    zip_openentry(r, 1) do io
+        @test read(io, String) == "I am data inside test1.txt in the zip file"
     end
 
 end

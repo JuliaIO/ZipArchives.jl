@@ -30,8 +30,8 @@ Return the minimum size of a local header for an entry.
 """
 min_local_header_size(entry::EntryInfo) = 30 + ncodeunits(entry.name)
 
-zip_nentries(x::Union{ZipFileReader,ZipWriter}) = length(x.entries)
-zip_entryname(x::Union{ZipFileReader,ZipWriter}, i) = x.entries[i].name
+zip_nentries(x::Union{ZipFileReader,ZipWriter,ZipBufferReader}) = length(x.entries)
+zip_entryname(x::Union{ZipFileReader,ZipWriter,ZipBufferReader}, i) = x.entries[i].name
 
 function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     ccall((:crc32_z, Zlib_jll.libz),
@@ -351,7 +351,7 @@ end
 
 
 """
-    zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
+    zip_openentry(r::ZipFileReader, i::Integer)
 
 Open entry `i` from `r` as a readable IO.
 
@@ -412,7 +412,7 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     end
 end
 
-function zip_openentry(f::Function, r::ZipFileReader, args...; kwargs...)
+function zip_openentry(f::Function, r::Union{ZipFileReader, ZipBufferReader}, args...; kwargs...)
     io = zip_openentry(r, args...; kwargs...)
     try
         f(io)
@@ -494,4 +494,41 @@ function Base.close(r::ZipFileReader)::Nothing
         end
     end
     nothing
+end
+
+function ZipBufferReader(data::T) where T<:AbstractVector{UInt8}
+    io = IOBuffer(data)
+    entries, central_dir_offset = parse_central_directory(io)
+    ZipBufferReader{T}(entries, central_dir_offset, data)
+end
+
+function zip_openentry(r::ZipBufferReader, i::Integer)
+    entry::EntryInfo = r.entries[i]
+    validate_entry(entry, length(r.buffer))
+    io = IOBuffer(r.buffer)
+    offset::Int64 = entry.offset
+    method = entry.method
+    # read and validate local header
+    seek(io, offset)
+    @argcheck readle(io, UInt32) == 0x04034b50
+    skip(io, 4)
+    @argcheck readle(io, UInt16) == method
+    skip(io, 4*4)
+    local_name_len = readle(io, UInt16)
+    @argcheck local_name_len == ncodeunits(entry.name)
+    extra_len = readle(io, UInt16)
+    @argcheck String(read(io, local_name_len)) == entry.name
+    skip(io, extra_len)
+    offset += 30 + extra_len + local_name_len
+    @argcheck offset + entry.compressed_size ≤ length(r.buffer)
+    startidx = firstindex(r.buffer) + offset
+    lastidx = firstindex(r.buffer) + offset + entry.compressed_size - 1
+    base_io = IOBuffer(view(r.buffer, startidx:lastidx))
+    if method == Store
+        return base_io
+    elseif method == Deflate
+        return DeflateDecompressorStream(base_io)
+    else
+        error("unknown compression method $method. Only Deflate and Store are supported.")
+    end
 end
