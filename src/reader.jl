@@ -122,6 +122,13 @@ function parse_central_directory(io::IO)
     disk16 = readle(io, UInt16)
     # number of the disk with the start of the central directory or -1
     cd_disk16 = readle(io, UInt16)
+    # Only one disk with num 0 is supported.
+    if disk16 != -1%UInt16
+        @argcheck disk16 == 0
+    end
+    if cd_disk16 != -1%UInt16
+        @argcheck cd_disk16 == 0
+    end
     # total number of entries in the central directory on this disk or -1
     num_entries_thisdisk16 = readle(io, UInt16)
     # total number of entries in the central directory or -1
@@ -140,7 +147,7 @@ function parse_central_directory(io::IO)
         central_dir_offset32 == -1%UInt32
     )
     use_eocd64 = maybe_eocd64 && check_EOCD64_used(io, eocd_offset)
-    central_dir_offset::Int64, num_entries::Int64, disk::Int64 = let 
+    central_dir_offset::Int64, num_entries::Int64 = let 
         if use_eocd64
             # Parse Zip64 end of central directory record
             # Error if not valid
@@ -148,18 +155,11 @@ function parse_central_directory(io::IO)
             # zip64 end of central dir locator signature
             @argcheck readle(io, UInt32) == 0x07064b50
             # number of the disk with the start of the zip64 end of central directory
-            local eocd64_disk = readle(io, UInt32)
-            # Only one disk is supported.
-            if disk16 != -1%UInt16
-                @argcheck eocd64_disk == disk16
-            end
-            if cd_disk16 != -1%UInt16
-                @argcheck eocd64_disk == cd_disk16
-            end
+            # Only one disk with num 0 is supported.
+            @argcheck readle(io, UInt32) == 0
             local eocd64_offset = readle(io, UInt64)
             local total_num_disks = readle(io, UInt32)
             @argcheck total_num_disks ≤ 1
-
             seek(io, eocd64_offset)
             # zip64 end of central dir signature
             @argcheck readle(io, UInt32) == 0x06064b50
@@ -173,9 +173,9 @@ function parse_central_directory(io::IO)
             local version_needed = readle(io, UInt16)
             @argcheck version_needed < 62
             # number of this disk
-            @argcheck readle(io, UInt32) == eocd64_disk
+            @argcheck readle(io, UInt32) == 0
             # number of the disk with the start of the central directory
-            @argcheck readle(io, UInt32) == eocd64_disk
+            @argcheck readle(io, UInt32) == 0
             # total number of entries in the central directory on this disk
             local num_entries_thisdisk64 = readle(io, UInt64)
             # total number of entries in the central directory
@@ -195,12 +195,13 @@ function parse_central_directory(io::IO)
                 @argcheck central_dir_offset64 == central_dir_offset32
             end
             @argcheck central_dir_offset64 ≤ eocd64_offset
-            (Int64(central_dir_offset64), Int64(num_entries64), Int64(eocd64_disk))
+            (Int64(central_dir_offset64), Int64(num_entries64))
         else
-            @argcheck disk16 == cd_disk16
+            @argcheck disk16 == 0
+            @argcheck cd_disk16 == 0
             @argcheck num_entries16 == num_entries_thisdisk16
             @argcheck central_dir_offset32 ≤ eocd_offset
-            (Int64(central_dir_offset32), Int64(num_entries16), Int64(disk16))
+            (Int64(central_dir_offset32), Int64(num_entries16))
         end
     end
     seek(io, central_dir_offset)
@@ -251,7 +252,7 @@ function parse_central_directory(io::IO)
             @argcheck ncodeunits(entry.comment) == comment_len
         end
 
-        # Parse Zip64 and normalize disk number to 0
+        # Parse Zip64 and check disk number is 0
         # Assume no zip64 is used, unless the extra field is found
         entry.uncompressed_size = u_size32
         entry.compressed_size = c_size32
@@ -280,12 +281,9 @@ function parse_central_directory(io::IO)
             if disk16 == -1%UInt16 && bytesavailable(b) ≥ 4
                 n_disk = readle(b, UInt32)
                 entry.n_disk_zip64 = true
-                # normalize disk number to 0
-                local n_disk_ptr = position(b) - 4
-                zip64_data[(n_disk_ptr+1):(n_disk_ptr+4)] .= 0x00
             end
         end
-        @argcheck n_disk == disk
+        @argcheck n_disk == 0
         push!(entries, entry)
     end
     # Maybe num_entries was too small: See https://github.com/thejoshwolfe/yauzl/issues/60
