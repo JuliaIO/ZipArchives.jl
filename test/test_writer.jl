@@ -36,26 +36,37 @@ ZipWriter(joinpath(tmp, "twofiles.zip")) do w
     write(w, "I am data inside test2.txt in the zip file")
 end
 
+ZipWriter(joinpath(tmp, "utf8.zip")) do w
+    zip_newfile(w, "🐨.txt")
+    write(w, "I am data inside 🐨.txt in the zip file")
+    zip_newfile(w, "test2.txt")
+    write(w, "I am data inside test2.txt in the zip file")
+end
+
 ZipWriter(joinpath(tmp, "3files-zip_writefile.zip")) do w
     zip_writefile(w, "test1.txt",  codeunits("I am data inside test1.txt in the zip file"))
     zip_writefile(w, "test2.txt",  codeunits("I am data inside test2.txt in the zip file"))
     zip_writefile(w, "empty.txt",  codeunits(""))
 end
 
-ZipWriter(joinpath(tmp, "twofiles64.zip"); force_zip64=true) do w
-    zip_newfile(w, "test1.txt")
-    write(w, "I am data inside test1.txt in the zip file")
-    zip_newfile(w, "test2.txt")
-    write(w, "I am data inside test2.txt in the zip file")
+open(joinpath(tmp, "twofiles64.zip"); write=true) do io
+    ZipWriter(io; force_zip64=true) do w
+        zip_newfile(w, "test1.txt")
+        write(w, "I am data inside test1.txt in the zip file")
+        zip_newfile(w, "test2.txt")
+        write(w, "I am data inside test2.txt in the zip file")
+    end
 end
 
-ZipWriter(joinpath(tmp, "4files64.zip"); force_zip64=true) do w
-    zip_newfile(w, "test1.txt")
-    write(w, "I am data inside test1.txt in the zip file")
-    zip_newfile(w, "empty1.txt")
-    zip_newfile(w, "test2.txt")
-    write(w, "I am data inside test2.txt in the zip file")
-    zip_newfile(w, "empty2.txt")
+open(joinpath(tmp, "4files64.zip"); write=true) do io
+    ZipWriter(io; force_zip64=true) do w
+        zip_newfile(w, "test1.txt")
+        write(w, "I am data inside test1.txt in the zip file")
+        zip_newfile(w, "empty1.txt")
+        zip_newfile(w, "test2.txt")
+        write(w, "I am data inside test2.txt in the zip file")
+        zip_newfile(w, "empty2.txt")
+    end
 end
 
 # This defines a vector of functions in `unzippers`
@@ -70,21 +81,23 @@ include("external_unzippers.jl")
         mktempdir() do tmpout
             # Unzip into an output directory
             unzipper(zippath, tmpout)
-            # Read zippath with ZipFile.Reader
+            # Read zippath with ZipFileReader
             # Check file names and data match
-            local dir = ZipFile.Reader(zippath)
-            for f in dir.files
-                local name = f.name
-                local extracted_path = joinpath(tmpout, name)
-                @test isfile(extracted_path)
-                @test read(f) == read(extracted_path)
+            ZipFileReader(zippath) do dir
+                for i in 1:zip_nentries(dir)
+                    local name = zip_entryname(dir, i)
+                    local extracted_path = joinpath(tmpout, name)
+                    @test isfile(extracted_path)
+                    zip_openentry(dir, i) do f
+                        @test read(f) == read(extracted_path)
+                    end
+                end
+                # Check number of extracted files match
+                local total_files = sum(walkdir(tmpout)) do (root, dirs, files)
+                    length(files)
+                end
+                @test zip_nentries(dir) == total_files
             end
-            # Check number of extracted files match
-            local total_files = sum(walkdir(tmpout)) do (root, dirs, files)
-                length(files)
-            end
-            @test length(dir.files) == total_files
-            close(dir)
         end
     end
 end

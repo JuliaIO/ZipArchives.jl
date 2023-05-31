@@ -5,7 +5,7 @@ using TranscodingStreams
 
 
 function ZipWriter(filename::AbstractString; kwargs...)
-    ZipWriter(Base.open(filename, "w"); own_io=true, kwargs...)
+    ZipWriter(Base.open(filename; write=true, kwargs...); own_io=true)
 end
 
 function ZipWriter(f::Function, io::IO; kwargs...)
@@ -19,7 +19,7 @@ function ZipWriter(f::Function, io::IO; kwargs...)
 end
 
 function ZipWriter(f::Function, filename::AbstractString; kwargs...)
-    ZipWriter(f, Base.open(filename, "w"); own_io=true, kwargs...)
+    ZipWriter(f, Base.open(filename; write=true, kwargs...); own_io=true)
 end
 
 Base.isopen(w::ZipWriter) = !w.closed
