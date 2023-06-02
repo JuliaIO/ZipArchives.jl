@@ -90,6 +90,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         end
         w = ZipWriter(io, zip_kwargs...)
         w.entries = entries
+        w.used_names = Set{String}(e.name for e in entries)
         w
     catch # close io if there is an error parsing entries
         if zip_kwargs.own_io
@@ -127,16 +128,51 @@ Base.isreadable(::ZipWriter) = false
 
 Base.iswritable(w::ZipWriter) = !isnothing(w.partial_entry)
 
+"""
+    zip_newfile(w::ZipWriter, name::AbstractString; 
+        compression_method=Store,
+        compression_level::Union{Nothing,Int}=nothing,
+        check_name_basic::Bool=true,
+        check_name_windows::Bool=false,
+    )
+
+Start a new file entry named `name`.
+
+This will commit any currently open entry 
+and make `w` writable for file entry `name`.
+
+# Optional Keywords
+- `compression_method=Store`: `Store` is uncompressed 
+`Deflate` is compressed.
+- `compression_level::Union{Nothing,Int}=nothing`: 
+For `Deflate` defaults to -1 and can be -1 or 0 to 9.
+1 is fastest, 9 is smallest file size. 
+0 is no compression, and -1 is a good compromise between speed and file size.
+- `check_name_basic::Bool=true`: Error if the name isn't valid or already exists.
+- `check_name_windows::Bool=false`: Error if the name isn't valid on windows.
+"""
 function zip_newfile(w::ZipWriter, name::AbstractString; 
         compression_method::UInt16=Store,
         compression_level::Union{Nothing,Int}=nothing,
+        check_name_basic::Bool=true,
+        check_name_windows::Bool=false,
     )
     @argcheck isopen(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
-    # TODO warn if name is problematic
     zip_commitfile(w)
     @assert !iswritable(w)
+    # TODO warn if name is problematic
+    if check_name_basic || check_name_windows
+        basic_name_check(namestr)
+        @argcheck !endswith(namestr, "/")
+        @argcheck namestr ∉ w.used_names
+    end
+    if check_name_windows
+        windows_name_check(namestr)
+    end
+
+
     io = w._io
     offset = position(io)
     entry = EntryInfo(;name=namestr, offset)
@@ -325,6 +361,7 @@ function zip_commitfile(w::ZipWriter)
             write_local_header(w._io, entry)
             seek(w._io, cur_offset)
         end
+        push!(w.used_names, entry.name)
         push!(w.entries, entry)
     end
     nothing
@@ -372,6 +409,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     write_local_header(io, entry)
     write(io, data) == length(data) || error("short write")
     @assert !iswritable(w)
+    push!(w.used_names, entry.name)
     push!(w.entries, entry)
     entry
 end

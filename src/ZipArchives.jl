@@ -1,6 +1,7 @@
 module ZipArchives
 
 include("constants.jl")
+include("filename-checks.jl")
 
 include("types.jl")
 

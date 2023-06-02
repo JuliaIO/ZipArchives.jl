@@ -53,8 +53,13 @@ min_local_header_size(entry::EntryInfo) = 30 + ncodeunits(entry.name)
 
 const HasEntries = Union{ZipFileReader,ZipWriter,ZipBufferReader}
 
+
+# Getters
+
 zip_nentries(x::HasEntries) = length(x.entries)
 zip_entryname(x::HasEntries, i) = x.entries[i].name
+zip_entrynames(x::HasEntries) = String[zip_entryname(x,i) for i in 1:zip_nentries(x)]
+
 
 
 
