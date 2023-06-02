@@ -33,14 +33,14 @@ Unlike [`zip_newfile`](@ref) using [`zip_writefile`](@ref) doesn't require the w
 
 `Base.close` on a `ZipWriter` will only close the wrapped `io` if `zip_kwargs` has `own_io=true` or the `ZipWriter` was created from a filename.
 
-### Multi threading
+# Multi threading
 
 A single `ZipWriter` instance doesn't allow mutations or 
 writes from multiple threads at the same time.
 
 Use locks if you want this.
 
-### Appending
+# Appending
 
 The archive will start writing at the current position of `io`, so if `io`
 is from an existing file opened with append, the archive will be appended as well.
@@ -49,6 +49,10 @@ This is fine because zip archives can have arbitrary data at the start.
 That data should be ignored by a zip reader.
 
 If you want to add entries to existing zip archive, use [`zip_append_archive`](@ref)
+
+# Optional Keywords
+- `check_names::Bool=true`: Best attempt to error if new entry names aren't valid on windows 
+or already exist in the archive in a case insensitive way.
 """
 function ZipWriter(f::Function, io::IO; zip_kwargs...)
     w = ZipWriter(io; zip_kwargs...)
@@ -90,8 +94,9 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         end
         w = ZipWriter(io, zip_kwargs...)
         w.entries = entries
-        w.used_names = Set{String}(e.name for e in entries)
-        w
+        if w.check_names
+            w.used_names_lower = Set{String}(lowercase(e.name) for e in entries)
+        end
     catch # close io if there is an error parsing entries
         if zip_kwargs.own_io
             close(io)
@@ -148,28 +153,20 @@ and make `w` writable for file entry `name`.
 For `Deflate` defaults to -1 and can be -1 or 0 to 9.
 1 is fastest, 9 is smallest file size. 
 0 is no compression, and -1 is a good compromise between speed and file size.
-- `check_name_basic::Bool=true`: Error if the name isn't valid or already exists.
-- `check_name_windows::Bool=false`: Error if the name isn't valid on windows.
 """
 function zip_newfile(w::ZipWriter, name::AbstractString; 
         compression_method::UInt16=Store,
         compression_level::Union{Nothing,Int}=nothing,
-        check_name_basic::Bool=true,
-        check_name_windows::Bool=false,
     )
     @argcheck isopen(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     zip_commitfile(w)
     @assert !iswritable(w)
-    # TODO warn if name is problematic
-    if check_name_basic || check_name_windows
+    if w.check_names
         basic_name_check(namestr)
         @argcheck !endswith(namestr, "/")
-        @argcheck namestr ∉ w.used_names
-    end
-    if check_name_windows
-        windows_name_check(namestr)
+        @argcheck lowercase(namestr) ∉ w.used_names_lower
     end
 
 
@@ -361,7 +358,9 @@ function zip_commitfile(w::ZipWriter)
             write_local_header(w._io, entry)
             seek(w._io, cur_offset)
         end
-        push!(w.used_names, entry.name)
+        if w.check_names
+            push!(w.used_names_lower, lowercase(entry.name))
+        end
         push!(w.entries, entry)
     end
     nothing
@@ -409,7 +408,9 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     write_local_header(io, entry)
     write(io, data) == length(data) || error("short write")
     @assert !iswritable(w)
-    push!(w.used_names, entry.name)
+    if w.check_names
+        push!(w.used_names_lower, lowercase(entry.name))
+    end
     push!(w.entries, entry)
     entry
 end

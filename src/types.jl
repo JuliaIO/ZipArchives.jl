@@ -80,8 +80,13 @@ mutable struct ZipWriter <: IO
     partial_entry::Union{Nothing, PartialEntry}
     closed::Bool
     force_zip64::Bool
-    used_names::Set{String}
-    function ZipWriter(io::IO; own_io::Bool=false, force_zip64::Bool=false)
+    used_names_lower::Set{String}
+    check_names::Bool
+    function ZipWriter(io::IO;
+            check_names::Bool=true,
+            own_io::Bool=false,
+            force_zip64::Bool=false,
+        )
         new(
             io,
             own_io,
@@ -90,6 +95,7 @@ mutable struct ZipWriter <: IO
             false,
             force_zip64,
             Set{String}(),
+            check_names,
         )
     end
 end
