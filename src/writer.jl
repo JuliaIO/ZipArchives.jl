@@ -3,13 +3,55 @@ using CodecZlib
 using TranscodingStreams
 
 
+"""
+    mutable struct ZipWriter <: IO
+    ZipWriter(io::IO; zip_kwargs...)
+    ZipWriter(f::Function, io::IO; zip_kwargs...)
 
-function ZipWriter(filename::AbstractString; kwargs...)
-    ZipWriter(Base.open(filename; write=true, kwargs...); own_io=true)
-end
+Create a zip archive writer on `io`.
 
-function ZipWriter(f::Function, io::IO; kwargs...)
-    w = ZipWriter(io; kwargs...)
+These methods also work with a `filename::AbstractString` instead of an `io::IO`.
+In that case, the passed keyword arguments will be used for `Base.open`.
+
+`io` must not be modified before the `ZipWriter` is closed (except using the wrapping `ZipWriter`).
+
+The `ZipWriter` becomes a writable `IO` after a call to [`zip_newfile`](@ref)
+
+    zip_newfile(w::ZipWriter, name::AbstractString; newfile_kwargs...)
+
+Any writes to the `ZipWriter` will write to the last specified new file.
+
+If [`zip_newfile`](@ref) is called while `ZipWriter` is writable, the previous file is committed to the archive. There is no way to edit previously written data.
+
+An alternative to [`zip_newfile`](@ref) is [`zip_writefile`](@ref)
+
+    zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8})
+
+This will directly write a vector of data to a file entry in `w`.
+Unlike [`zip_newfile`](@ref) using [`zip_writefile`](@ref) doesn't require the wrapped `io` to be seekable.
+
+
+`Base.close` on a `ZipWriter` will only close the wrapped `io` if `zip_kwargs` has `own_io=true` or the `ZipWriter` was created from a filename.
+
+### Multi threading
+
+A single `ZipWriter` instance doesn't allow mutations or 
+writes from multiple threads at the same time.
+
+Use locks if you want this.
+
+### Appending
+
+The archive will start writing at the current position of `io`, so if `io`
+is from an existing file opened with append, the archive will be appended as well.
+
+This is fine because zip archives can have arbitrary data at the start. 
+That data should be ignored by a zip reader.
+
+If you want to add entries to existing zip archive, use [`zip_append_archive`](@ref)
+"""
+function ZipWriter(f::Function, io::IO; zip_kwargs...)
+    w = ZipWriter(io; zip_kwargs...)
     try
         f(w)
     finally
@@ -17,9 +59,66 @@ function ZipWriter(f::Function, io::IO; kwargs...)
     end
     w
 end
+function ZipWriter(filename::AbstractString; open_kwargs...)
+    ZipWriter(Base.open(filename; write=true, open_kwargs...); own_io=true)
+end
+function ZipWriter(f::Function, filename::AbstractString; open_kwargs...)
+    ZipWriter(f, Base.open(filename; write=true, open_kwargs...); own_io=true)
+end
 
-function ZipWriter(f::Function, filename::AbstractString; kwargs...)
-    ZipWriter(f, Base.open(filename; write=true, kwargs...); own_io=true)
+"""
+    zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWriter
+
+Return a `ZipWriter` that will add entries to the existing zip archive in `io`.
+
+These functions also work with a `filename::AbstractString` instead of an `io::IO`.
+In that case, the passed keyword arguments will be used for `Base.open`.
+
+If `io` doesn't have a valid zip archive footer already, this function will error.
+
+If `trunc_footer=true` the no longer needed zip archive footer at the end of `io` will be truncated.
+Otherwise, it will be left as is.
+"""
+function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWriter
+    try
+        entries, central_dir_offset = parse_central_directory(io)
+        if trunc_footer
+            truncate(io, central_dir_offset)
+            seekend(io)
+        else
+            seekend(io)
+        end
+        w = ZipWriter(io, zip_kwargs...)
+        w.entries = entries
+        w
+    catch # close io if there is an error parsing entries
+        if zip_kwargs.own_io
+            close(io)
+        end
+        rethrow()
+    end
+end
+function zip_append_archive(f::Function, io::IO; kwargs...)::ZipWriter
+    w = zip_appendzip(io; kwargs...)
+    try
+        f(w)
+    finally
+        close(w)
+    end
+    w
+end
+function zip_append_archive(filename::AbstractString; open_kwargs...)
+    zip_appendzip(
+        Base.open(filename; read=true, write=true, open_kwargs...);
+        zip_kwargs=(;own_io=true)
+    )
+end
+function zip_append_archive(f::Function, filename::AbstractString; open_kwargs...)
+    zip_appendzip(
+        f,
+        Base.open(filename; read=true, write=true, open_kwargs...);
+        zip_kwargs=(;own_io=true)
+    )
 end
 
 Base.isopen(w::ZipWriter) = !w.closed
@@ -36,7 +135,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     # TODO warn if name is problematic
-    iswritable(w) && zip_commitfile(w)
+    zip_commitfile(w)
     @assert !iswritable(w)
     io = w._io
     offset = position(io)
@@ -198,36 +297,53 @@ function normalize_zip64!(entry::EntryInfo, force_zip64=false)
     nothing
 end
 
-function zip_commitfile(w::ZipWriter)::EntryInfo
-    assert_writeable(w)
-    pe::PartialEntry = w.partial_entry
-    entry::EntryInfo = pe.entry
-    w.partial_entry = nothing
-    # If some error happens, the file will be partially written,
-    # but not included in the central directory.
-    # Finish the compressing here, but don't close underlying IO.
-    try
-        write(pe.transcoder, TranscodingStreams.TOKEN_END)
-    finally
-        # Prevent memory leak maybe.
-        TranscodingStreams.finalize(pe.transcoder.codec)
-    end
+function zip_commitfile(w::ZipWriter)
+    if iswritable(w)
+        pe::PartialEntry = w.partial_entry
+        entry::EntryInfo = pe.entry
+        w.partial_entry = nothing
+        # If some error happens, the file will be partially written,
+        # but not included in the central directory.
+        # Finish the compressing here, but don't close underlying IO.
+        try
+            write(pe.transcoder, TranscodingStreams.TOKEN_END)
+        finally
+            # Prevent memory leak maybe.
+            TranscodingStreams.finalize(pe.transcoder.codec)
+        end
 
-    pe.entry.compressed_size = position(w._io) - entry.offset - pe.local_header_size
-    normalize_zip64!(entry, w.force_zip64)
-    
-    # note, make sure never to change the partial_entry except for these three things.
-    @assert normal_local_header_size(entry) == pe.local_header_size
-    if !all(iszero, (entry.uncompressed_size, entry.compressed_size, entry.crc32))
-        # Must go back and update the local header if any data was written.
-        cur_offset = position(w._io)
-        # TODO add better error message about requiring seekable IO if this fails
-        seek(w._io, entry.offset)
-        write_local_header(w._io, entry)
-        seek(w._io, cur_offset)
+        pe.entry.compressed_size = position(w._io) - entry.offset - pe.local_header_size
+        normalize_zip64!(entry, w.force_zip64)
+        
+        # note, make sure never to change the partial_entry except for these three things.
+        @assert normal_local_header_size(entry) == pe.local_header_size
+        if !all(iszero, (entry.uncompressed_size, entry.compressed_size, entry.crc32))
+            # Must go back and update the local header if any data was written.
+            cur_offset = position(w._io)
+            # TODO add better error message about requiring seekable IO if this fails
+            seek(w._io, entry.offset)
+            write_local_header(w._io, entry)
+            seek(w._io, cur_offset)
+        end
+        push!(w.entries, entry)
     end
-    push!(w.entries, entry)
-    entry
+    nothing
+end
+
+
+function zip_abortfile(w::ZipWriter)
+    if iswritable(w)
+        pe::PartialEntry = w.partial_entry
+        w.partial_entry = nothing
+        # Finish the compressing here, but don't close underlying IO.
+        try
+            write(pe.transcoder, TranscodingStreams.TOKEN_END)
+        finally
+            # Prevent memory leak maybe.
+            TranscodingStreams.finalize(pe.transcoder.codec)
+        end
+    end
+    nothing
 end
 
 """
@@ -240,12 +356,11 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     # TODO warn if name is problematic
-    iswritable(w) && zip_commitfile(w)
+    zip_commitfile(w)
     @assert !iswritable(w)
     io = w._io
     offset = position(io)
-    # TODO calculate crc32 even if no pointer method on data
-    crc32 = GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), UInt32(0))
+    crc32 = zip_crc32(data)
     entry = EntryInfo(;
         name=namestr,
         offset,
@@ -376,7 +491,7 @@ end
 function Base.close(w::ZipWriter)
     if !w.closed
         try
-            isnothing(w.partial_entry) || zip_commitfile(w)
+            zip_commitfile(w)
         finally
             w.partial_entry = nothing
             try

@@ -1,5 +1,26 @@
 import Zlib_jll
 
+function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
+    ccall((:crc32_z, Zlib_jll.libz),
+        Culong, (Culong, Ptr{UInt8}, Csize_t),
+        crc, p, nb,
+    )
+end
+
+function zip_crc32(data::DenseVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
+    GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), crc)
+end
+
+function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
+    zip_crc32(collect(data), crc)
+end
+
+# Copied from ZipFile.jl
+readle(io::IO, ::Type{UInt64}) = htol(read(io, UInt64))
+readle(io::IO, ::Type{UInt32}) = htol(read(io, UInt32))
+readle(io::IO, ::Type{UInt16}) = htol(read(io, UInt16))
+readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
+
 
 function Base.:(==)(x::EntryInfo, y::EntryInfo)
     iox = IOBuffer()
@@ -30,21 +51,12 @@ Return the minimum size of a local header for an entry.
 """
 min_local_header_size(entry::EntryInfo) = 30 + ncodeunits(entry.name)
 
-zip_nentries(x::Union{ZipFileReader,ZipWriter,ZipBufferReader}) = length(x.entries)
-zip_entryname(x::Union{ZipFileReader,ZipWriter,ZipBufferReader}, i) = x.entries[i].name
+const HasEntries = Union{ZipFileReader,ZipWriter,ZipBufferReader}
 
-function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
-    ccall((:crc32_z, Zlib_jll.libz),
-        Culong, (Culong, Ptr{UInt8}, Csize_t),
-        crc, p, nb,
-    )
-end
+zip_nentries(x::HasEntries) = length(x.entries)
+zip_entryname(x::HasEntries, i) = x.entries[i].name
 
-# Copied from ZipFile.jl
-readle(io::IO, ::Type{UInt64}) = htol(read(io, UInt64))
-readle(io::IO, ::Type{UInt32}) = htol(read(io, UInt32))
-readle(io::IO, ::Type{UInt16}) = htol(read(io, UInt16))
-readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
+
 
 
 # If this fails, io isn't a zip file, io isn't seekable, 
