@@ -137,14 +137,15 @@ Base.iswritable(w::ZipWriter) = !isnothing(w.partial_entry)
     zip_newfile(w::ZipWriter, name::AbstractString; 
         compression_method=Store,
         compression_level::Union{Nothing,Int}=nothing,
-        check_name_basic::Bool=true,
-        check_name_windows::Bool=false,
     )
 
 Start a new file entry named `name`.
 
 This will commit any currently open entry 
 and make `w` writable for file entry `name`.
+
+The wrapped `IO` in `w` must be seekable to use this function.
+If not see [`zip_writefile`](@ref)
 
 # Optional Keywords
 - `compression_method=Store`: `Store` is uncompressed 
@@ -168,8 +169,6 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
         @argcheck !endswith(namestr, "/")
         @argcheck lowercase(namestr) ∉ w.used_names_lower
     end
-
-
     io = w._io
     offset = position(io)
     entry = EntryInfo(;name=namestr, offset)
@@ -330,6 +329,12 @@ function normalize_zip64!(entry::EntryInfo, force_zip64=false)
     nothing
 end
 
+"""
+    zip_commitfile(w::ZipWriter)
+Close any open entry making `w` not writable.
+If there is some error, this will behave like [`zip_abortfile`](@ref)
+then rethrow the error.
+"""
 function zip_commitfile(w::ZipWriter)
     if iswritable(w)
         pe::PartialEntry = w.partial_entry
@@ -366,7 +371,13 @@ function zip_commitfile(w::ZipWriter)
     nothing
 end
 
+"""
+    zip_abortfile(w::ZipWriter)
+Close any open entry making `w` not writable.
 
+The open entry is not added to the list of entries 
+so will be ignored when the zip archive is read.
+"""
 function zip_abortfile(w::ZipWriter)
     if iswritable(w)
         pe::PartialEntry = w.partial_entry
@@ -383,15 +394,22 @@ function zip_abortfile(w::ZipWriter)
 end
 
 """
-Write a full file.
+    zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8})
+
+Write data as a file entry named `name`.
+
 Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
-`w` isn't writable after.
+`w` isn't writable after. The written data will not be compressed.
 """
 function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8})
     @argcheck isopen(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
-    # TODO warn if name is problematic
+    if w.check_names
+        basic_name_check(namestr)
+        @argcheck !endswith(namestr, "/")
+        @argcheck lowercase(namestr) ∉ w.used_names_lower
+    end
     zip_commitfile(w)
     @assert !iswritable(w)
     io = w._io
