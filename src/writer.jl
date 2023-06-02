@@ -155,11 +155,14 @@ For `Deflate` defaults to -1 and can be -1 or 0 to 9.
 0 is no compression, and -1 is a good compromise between speed and file size.
 - `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
 Defaults to false.
+- `external_attr::Union{Nothing,UInt32}=nothing`: Manually set the 
+external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
 """
 function zip_newfile(w::ZipWriter, name::AbstractString; 
         compression_method::UInt16=Store,
         compression_level::Union{Nothing,Int}=nothing,
         executable::Union{Nothing,Bool}=nothing,
+        external_attrs::Union{Nothing,UInt32}=nothing,
     )
     @argcheck isopen(w)
     zip_commitfile(w)
@@ -167,7 +170,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     if w.check_names
         basic_name_check(namestr)
-        @argcheck !endswith(namestr, "/")
+        @argcheck !isnothing(external_attrs) || !endswith(namestr, "/")
         @argcheck lowercase(namestr) ∉ w.used_names_lower
     end
     @assert !iswritable(w)
@@ -176,6 +179,10 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     entry = EntryInfo(;name=namestr, offset)
     if !isnothing(executable) && executable
         entry.external_attrs = UInt32(0o0100755)<<16
+    end
+    # Manual override of external_attrs
+    if !isnothing(external_attrs)
+        entry.external_attrs = external_attrs
     end
     if w.force_zip64
         entry.c_size_zip64 = true
@@ -408,15 +415,24 @@ Write data as a file entry named `name`.
 
 Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
 `w` isn't writable after. The written data will not be compressed.
+
+# Optional Keywords
+- `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
+Defaults to false.
+- `external_attr::Union{Nothing,UInt32}=nothing`: Manually set the 
+external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
 """
-function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8})
+function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8};
+        executable::Union{Nothing,Bool}=nothing,
+        external_attrs::Union{Nothing,UInt32}=nothing,
+    )
     @argcheck isopen(w)
     zip_commitfile(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     if w.check_names
         basic_name_check(namestr)
-        @argcheck !endswith(namestr, "/")
+        @argcheck !isnothing(external_attrs) || !endswith(namestr, "/")
         @argcheck lowercase(namestr) ∉ w.used_names_lower
     end
     @assert !iswritable(w)
@@ -430,6 +446,13 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
         uncompressed_size=length(data),
         crc32,
     )
+    if !isnothing(executable) && executable
+        entry.external_attrs = UInt32(0o0100755)<<16
+    end
+    # Manual override of external_attrs
+    if !isnothing(external_attrs)
+        entry.external_attrs = external_attrs
+    end
     normalize_zip64!(entry, w.force_zip64)
     write_local_header(io, entry)
     write(io, data) == length(data) || error("short write")
@@ -438,7 +461,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
         push!(w.used_names_lower, lowercase(entry.name))
     end
     push!(w.entries, entry)
-    entry
+    nothing
 end
 
 """
@@ -451,34 +474,31 @@ Write a directory entry named `name`.
 This is only needed to add an empty directory.
 """
 function zip_mkdir(w::ZipWriter, name::AbstractString)
-    @argcheck isopen(w)
-    zip_commitfile(w)
     namestr = String(name)
     if !endswith(namestr, "/")
         namestr = namestr*"/"
     end
-    @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
-    if w.check_names
-        basic_name_check(namestr)
-        @assert endswith(namestr, "/")
-        @argcheck lowercase(namestr) ∉ w.used_names_lower
-    end
-    @assert !iswritable(w)
-    io = w._io
-    offset = position(io)
-    entry = EntryInfo(;
-        name=namestr,
-        offset,
-        external_attrs = UInt32(0o0040755)<<16,
+    zip_writefile(w, namestr, UInt8[];
+        external_attrs=UInt32(0o0040755)<<16,
     )
-    normalize_zip64!(entry, w.force_zip64)
-    write_local_header(io, entry)
-    @assert !iswritable(w)
+end
+
+"""
+zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
+
+Creates a symbolic link to `target` with the name `link`.
+
+This is not supported by most zip extractors including the one in this package.
+"""
+function zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
     if w.check_names
-        push!(w.used_names_lower, lowercase(entry.name))
+        throw(ArgumentError("symlinks in zipfiles are not very portable."))
     end
-    push!(w.entries, entry)
-    entry
+    targetstr = String(target)
+    namestr = String(link)
+    zip_writefile(w, namestr, codeunits(targetstr);
+        external_attrs=UInt32(0o0120755)<<16,
+    )
 end
 
 """

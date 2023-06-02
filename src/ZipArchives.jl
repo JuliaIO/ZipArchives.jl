@@ -11,6 +11,7 @@ export ZipBufferReader
 export zip_crc32
 export zip_nentries
 export zip_entryname
+export zip_entrynames
 export zip_openentry
 
 include("writer.jl")
@@ -20,5 +21,8 @@ export zip_writefile
 export zip_newfile
 export zip_commitfile
 export zip_abortfile
+export zip_mkdir
+
+include("high-level.jl")
 
 end
