@@ -136,7 +136,6 @@ Base.iswritable(w::ZipWriter) = !isnothing(w.partial_entry)
 """
     zip_newfile(w::ZipWriter, name::AbstractString; 
         compression_method=Store,
-        compression_level::Union{Nothing,Int}=nothing,
     )
 
 Start a new file entry named `name`.
@@ -154,24 +153,30 @@ If not see [`zip_writefile`](@ref)
 For `Deflate` defaults to -1 and can be -1 or 0 to 9.
 1 is fastest, 9 is smallest file size. 
 0 is no compression, and -1 is a good compromise between speed and file size.
+- `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
+Defaults to false.
 """
 function zip_newfile(w::ZipWriter, name::AbstractString; 
         compression_method::UInt16=Store,
         compression_level::Union{Nothing,Int}=nothing,
+        executable::Union{Nothing,Bool}=nothing,
     )
     @argcheck isopen(w)
+    zip_commitfile(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
-    zip_commitfile(w)
-    @assert !iswritable(w)
     if w.check_names
         basic_name_check(namestr)
         @argcheck !endswith(namestr, "/")
         @argcheck lowercase(namestr) ∉ w.used_names_lower
     end
+    @assert !iswritable(w)
     io = w._io
     offset = position(io)
     entry = EntryInfo(;name=namestr, offset)
+    if !isnothing(executable) && executable
+        entry.external_attrs = UInt32(0o0100755)<<16
+    end
     if w.force_zip64
         entry.c_size_zip64 = true
         entry.u_size_zip64 = true
@@ -358,10 +363,13 @@ function zip_commitfile(w::ZipWriter)
         if !all(iszero, (entry.uncompressed_size, entry.compressed_size, entry.crc32))
             # Must go back and update the local header if any data was written.
             cur_offset = position(w._io)
-            # TODO add better error message about requiring seekable IO if this fails
-            seek(w._io, entry.offset)
-            write_local_header(w._io, entry)
-            seek(w._io, cur_offset)
+            try
+                # TODO add better error message about requiring seekable IO if this fails
+                seek(w._io, entry.offset)
+                write_local_header(w._io, entry)
+            finally
+                seek(w._io, cur_offset)
+            end
         end
         if w.check_names
             push!(w.used_names_lower, lowercase(entry.name))
@@ -403,6 +411,7 @@ Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
 """
 function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8})
     @argcheck isopen(w)
+    zip_commitfile(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     if w.check_names
@@ -410,7 +419,6 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
         @argcheck !endswith(namestr, "/")
         @argcheck lowercase(namestr) ∉ w.used_names_lower
     end
-    zip_commitfile(w)
     @assert !iswritable(w)
     io = w._io
     offset = position(io)
@@ -425,6 +433,46 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     normalize_zip64!(entry, w.force_zip64)
     write_local_header(io, entry)
     write(io, data) == length(data) || error("short write")
+    @assert !iswritable(w)
+    if w.check_names
+        push!(w.used_names_lower, lowercase(entry.name))
+    end
+    push!(w.entries, entry)
+    entry
+end
+
+"""
+    zip_mkdir(w::ZipWriter, name::AbstractString)
+
+Write a directory entry named `name`.
+
+`name` should end in "/". If not it will be added.
+
+This is only needed to add an empty directory.
+"""
+function zip_mkdir(w::ZipWriter, name::AbstractString)
+    @argcheck isopen(w)
+    zip_commitfile(w)
+    namestr = String(name)
+    if !endswith(namestr, "/")
+        namestr = namestr*"/"
+    end
+    @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
+    if w.check_names
+        basic_name_check(namestr)
+        @assert endswith(namestr, "/")
+        @argcheck lowercase(namestr) ∉ w.used_names_lower
+    end
+    @assert !iswritable(w)
+    io = w._io
+    offset = position(io)
+    entry = EntryInfo(;
+        name=namestr,
+        offset,
+        external_attrs = UInt32(0o0040755)<<16,
+    )
+    normalize_zip64!(entry, w.force_zip64)
+    write_local_header(io, entry)
     @assert !iswritable(w)
     if w.check_names
         push!(w.used_names_lower, lowercase(entry.name))
