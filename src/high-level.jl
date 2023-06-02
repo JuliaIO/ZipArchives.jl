@@ -57,7 +57,7 @@ function zip_create(
     @argcheck zip_root != "."
     
     ZipWriter(ziparchive; check_names=portable, own_io) do w
-        _zip_add_dir(w, predicate, dirpath, zip_root)
+        _zip_add_dir(w, predicate, dir_str, zip_root)
     end
     ziparchive
 end
@@ -149,13 +149,15 @@ Currently symlinks are reinterpreted as regular text files, not copied or recrea
 
 If `set_permissions` is `false`, no permissions are set on the extracted files.
 """
-# function zip_extractall(
-#     predicate::Function,
-#     ziparchive::Union{AbstractString, AbstractVector{UInt8}},
-#     dir::AbstractString;
+function zip_extractall(
+        predicate::Function,
+        ziparchive::Union{AbstractString, AbstractVector{UInt8}},
+        dir::Union{AbstractString, Nothing} = nothing;
 
-#     set_permissions::Bool=false,
-# )
+        set_permissions::Bool=false,
+    )
+    
+end
 
 
 

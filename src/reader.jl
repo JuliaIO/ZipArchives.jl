@@ -59,8 +59,17 @@ const HasEntries = Union{ZipFileReader,ZipWriter,ZipBufferReader}
 zip_nentries(x::HasEntries) = length(x.entries)
 zip_entryname(x::HasEntries, i) = x.entries[i].name
 zip_entrynames(x::HasEntries) = String[zip_entryname(x,i) for i in 1:zip_nentries(x)]
+zip_entry_isdir(x::HasEntries, i) = endswith(x.entries[i].name, "/")
 
 
+function zip_entry_isexecutablefile(x::HasEntries, i)
+    entry = x.entries[i]
+    (
+        entry.os == UNIX &&
+        !iszero(entry.external_attrs & (UInt32(0o100)<<16)) &&
+        (entry.external_attrs>>(32-4)) == 0o10
+    )
+end
 
 
 
