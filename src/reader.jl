@@ -263,20 +263,23 @@ function parse_central_directory(io::IO)
         @argcheck ncodeunits(entry.name) == name_len
 
         #reading the variable sized extra fields
-        local b = read(io, extras_len)
-        entry.central_extras_buffer = b
-        local central_extras = entry.central_extras
-        local extras_bytes_left::Int = extras_len
-        local p::Int = 1
-        while extras_bytes_left ≥ 4
-            @inbounds(local id::UInt16 = UInt16(b[p+1])<<8 | UInt16(b[p]))
-            p += 2
-            @inbounds(local data_size::UInt16 =  UInt16(b[p+1])<<8 | UInt16(b[p]))
-            p += 2
-            extras_bytes_left -= 4
-            @argcheck data_size ≤ extras_bytes_left
-            extras_bytes_left -= data_size
-            push!(central_extras, ExtraField(id, (p:p+data_size-1)))
+        if !iszero(extras_len)
+            local extra_b = read(io, extras_len)
+            local central_extras = ExtraField[]
+            local extras_bytes_left::Int = extras_len
+            local p::Int = 1
+            while extras_bytes_left ≥ 4
+                @inbounds(local id::UInt16 = UInt16(extra_b[p+1])<<8 | UInt16(extra_b[p]))
+                p += 2
+                @inbounds(local data_size::UInt16 =  UInt16(extra_b[p+1])<<8 | UInt16(extra_b[p]))
+                p += 2
+                extras_bytes_left -= 4
+                @argcheck data_size ≤ extras_bytes_left
+                extras_bytes_left -= data_size
+                push!(central_extras, ExtraField(id, (p:p+data_size-1)))
+            end
+            entry.central_extras = central_extras
+            entry.central_extras_buffer = extra_b
         end
 
         if !iszero(comment_len)
@@ -294,28 +297,30 @@ function parse_central_directory(io::IO)
         entry.u_size_zip64 = false
         entry.offset_zip64 = false
         entry.n_disk_zip64 = false
-        local zip64_idx = findfirst(x->(x.id==0x0001), central_extras)
-        if !isnothing(zip64_idx) && entry.version_needed ≥ 45
-            local zip64_data = view(
-                entry.central_extras_buffer,
-                central_extras[zip64_idx].data_range,
-            )
-            local b = IOBuffer(zip64_data)
-            if u_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                entry.uncompressed_size = readle(b, UInt64)
-                entry.u_size_zip64 = true
-            end
-            if c_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                entry.compressed_size = readle(b, UInt64)
-                entry.c_size_zip64 = true
-            end
-            if offset32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                entry.offset = readle(b, UInt64)
-                entry.offset_zip64 = true
-            end
-            if disk16 == -1%UInt16 && bytesavailable(b) ≥ 4
-                n_disk = readle(b, UInt32)
-                entry.n_disk_zip64 = true
+        if !iszero(extras_len)
+            local zip64_idx = findfirst(x->(x.id==0x0001), entry.central_extras)
+            if !isnothing(zip64_idx) && entry.version_needed ≥ 45
+                local zip64_data = view(
+                    entry.central_extras_buffer,
+                    entry.central_extras[zip64_idx].data_range,
+                )
+                local b = IOBuffer(zip64_data)
+                if u_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
+                    entry.uncompressed_size = readle(b, UInt64)
+                    entry.u_size_zip64 = true
+                end
+                if c_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
+                    entry.compressed_size = readle(b, UInt64)
+                    entry.c_size_zip64 = true
+                end
+                if offset32 == -1%UInt32 && bytesavailable(b) ≥ 8
+                    entry.offset = readle(b, UInt64)
+                    entry.offset_zip64 = true
+                end
+                if disk16 == -1%UInt16 && bytesavailable(b) ≥ 4
+                    n_disk = readle(b, UInt32)
+                    entry.n_disk_zip64 = true
+                end
             end
         end
         @argcheck n_disk == 0
