@@ -8,6 +8,9 @@ struct ExtraField
     data_range::UnitRange{Int}
 end
 
+const empty_extra_fields = ExtraField[]
+const empty_buffer = UInt8[]
+
 """
 This is an internal type.
 Info about an entry in a zip file.
@@ -32,8 +35,8 @@ Base.@kwdef mutable struct EntryInfo
     external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
     name::String
     comment::String = ""
-    central_extras_buffer::Vector{UInt8} = UInt8[]
-    central_extras::Vector{ExtraField} = ExtraField[]
+    central_extras_buffer::Vector{UInt8} = empty_buffer
+    central_extras::Vector{ExtraField} = empty_extra_fields
 end
 
 struct ZipFileReader
