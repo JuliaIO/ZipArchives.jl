@@ -331,12 +331,15 @@ function normalize_zip64!(entry::EntryInfo, force_zip64=false)
         entry.offset_zip64 = true
         entry.n_disk_zip64 = false
         entry.version_needed = max(entry.version_needed, UInt16(45))
-        b = zeros(UInt8, 8*3)
+        b = zeros(UInt8, 8*3+4)
         p = 1
+        p += write_buffer(b, p, 0x0001)
+        p += write_buffer(b, p, UInt16(8*3))
         p += write_buffer(b, p, entry.uncompressed_size)
         p += write_buffer(b, p, entry.compressed_size)
         p += write_buffer(b, p, entry.offset)
-        entry.central_extras = [ExtraField(0x0001, b)]
+        entry.central_extras_buffer = b
+        entry.central_extras = [ExtraField(0x0001, 5:(8*3+4))]
     end
     nothing
 end
@@ -506,9 +509,7 @@ Just write whatever is in entry, don't normalize or check for issues here.
 """
 function write_central_header(io::IO, entry::EntryInfo)
     name_len::UInt16 = ncodeunits(entry.name)
-    extra_len::UInt16 = sum(entry.central_extras; init=0) do extra::ExtraField
-        4 + length(extra.data)
-    end
+    extra_len::UInt16 = length(entry.central_extras_buffer)
     comment_len::UInt16 = ncodeunits(entry.comment)
     b = zeros(UInt8, 46 + Int(name_len) + Int(extra_len) + Int(comment_len))
     p = 1
@@ -547,11 +548,7 @@ function write_central_header(io::IO, entry::EntryInfo)
         p += write_buffer(b, p, UInt32(entry.offset))
     end
     p += write_buffer(b, p, entry.name)
-    for extra in entry.central_extras
-        p += write_buffer(b, p, extra.id)
-        p += write_buffer(b, p, UInt16(length(extra.data)))
-        p += write_buffer(b, p, extra.data)
-    end
+    p += write_buffer(b, p, entry.central_extras_buffer)
     p += write_buffer(b, p, entry.comment)
     @assert p == length(b)+1
     n = write(io, b)

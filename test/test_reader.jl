@@ -102,6 +102,7 @@ end
         my_rand(T::Type{<:Integer}) = rand(T)
         my_rand(T::Type{String}) = String(rand(UInt8, rand(0:2^6)))
         my_rand(T::Type{Vector{ZipArchives.ExtraField}}) = []
+        my_rand(T::Type{Vector{UInt8}}) = rand(UInt8, rand(0:2^6))
         in_entries = map(1:n_entries) do i
             local e = ZipArchives.EntryInfo(map(my_rand, fieldtypes(ZipArchives.EntryInfo))...)
             ZipArchives.normalize_zip64!(e, rand(Bool))

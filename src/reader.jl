@@ -61,7 +61,6 @@ zip_entryname(x::HasEntries, i) = x.entries[i].name
 zip_entrynames(x::HasEntries) = String[zip_entryname(x,i) for i in 1:zip_nentries(x)]
 zip_entry_isdir(x::HasEntries, i) = endswith(x.entries[i].name, "/")
 
-
 function zip_entry_isexecutablefile(x::HasEntries, i)
     entry = x.entries[i]
     (
@@ -70,6 +69,11 @@ function zip_entry_isexecutablefile(x::HasEntries, i)
         (entry.external_attrs>>(32-4)) == 0o10
     )
 end
+
+zip_entry_uncompressed_size(x::HasEntries, i) = x.entries[i].uncompressed_size
+zip_entry_compressed_size(x::HasEntries, i) = x.entries[i].compressed_size
+
+
 
 
 
@@ -259,19 +263,21 @@ function parse_central_directory(io::IO)
         @argcheck ncodeunits(entry.name) == name_len
 
         #reading the variable sized extra fields
+        local b = read(io, extras_len)
+        entry.central_extras_buffer = b
         local central_extras = entry.central_extras
         local extras_bytes_left::Int = extras_len
+        local p::Int = 1
         while extras_bytes_left ≥ 4
-            local id = readle(io, UInt16)
-            local data_size = readle(io, UInt16)
+            @inbounds(local id::UInt16 = UInt16(b[p+1])<<8 | UInt16(b[p]))
+            p += 2
+            @inbounds(local data_size::UInt16 =  UInt16(b[p+1])<<8 | UInt16(b[p]))
+            p += 2
             extras_bytes_left -= 4
             @argcheck data_size ≤ extras_bytes_left
-            local data = read(io, data_size)
-            @argcheck length(data) == data_size
             extras_bytes_left -= data_size
-            push!(central_extras, ExtraField(id, data))
+            push!(central_extras, ExtraField(id, (p:p+data_size-1)))
         end
-        @argcheck iszero(extras_bytes_left)
 
         if !iszero(comment_len)
             entry.comment = String(read(io, comment_len))
@@ -290,7 +296,10 @@ function parse_central_directory(io::IO)
         entry.n_disk_zip64 = false
         local zip64_idx = findfirst(x->(x.id==0x0001), central_extras)
         if !isnothing(zip64_idx) && entry.version_needed ≥ 45
-            local zip64_data = central_extras[zip64_idx].data
+            local zip64_data = view(
+                entry.central_extras_buffer,
+                central_extras[zip64_idx].data_range,
+            )
             local b = IOBuffer(zip64_data)
             if u_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
                 entry.uncompressed_size = readle(b, UInt64)

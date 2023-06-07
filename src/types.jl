@@ -3,7 +3,9 @@ using TranscodingStreams
 
 struct ExtraField
     id::UInt16
-    data::Vector{UInt8}
+    "Where the data for the extra field is in `central_extras_buffer`
+    This doesn't include the size and id"
+    data_range::UnitRange{Int}
 end
 
 """
@@ -30,6 +32,7 @@ Base.@kwdef mutable struct EntryInfo
     external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
     name::String
     comment::String = ""
+    central_extras_buffer::Vector{UInt8} = UInt8[]
     central_extras::Vector{ExtraField} = ExtraField[]
 end
 
