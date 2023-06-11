@@ -85,7 +85,7 @@ Otherwise, it will be left as is.
 """
 function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWriter
     try
-        entries, central_dir_offset = parse_central_directory(io)
+        entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
         if trunc_footer
             truncate(io, central_dir_offset)
             seekend(io)
@@ -94,6 +94,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         end
         w = ZipWriter(io, zip_kwargs...)
         w.entries = entries
+        w.central_dir_buffer = central_dir_buffer
         if w.check_names
             w.used_names_lower = Set{String}(lowercase(e.name) for e in entries)
         end
@@ -176,22 +177,22 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     @assert !iswritable(w)
     io = w._io
     offset = position(io)
-    entry = EntryInfo(;name=namestr, offset)
+    pe = PartialEntry(;
+        name=namestr,
+        w.force_zip64,
+        offset,
+    )
+
     if !isnothing(executable) && executable
-        entry.external_attrs = UInt32(0o0100755)<<16
+        pe.external_attrs = UInt32(0o0100755)<<16
     end
     # Manual override of external_attrs
     if !isnothing(external_attrs)
-        entry.external_attrs = external_attrs
+        pe.external_attrs = external_attrs
     end
-    if w.force_zip64
-        entry.c_size_zip64 = true
-        entry.u_size_zip64 = true
-        entry.offset_zip64 = true
-        entry.version_needed = 45
-    end
+
     codec, level_bits = if compression_method==Store
-        (Noop(), 0)
+        (Noop(), UInt16(0))
     elseif compression_method==Deflate
         if isnothing(compression_level)
             compression_level = -1
@@ -204,14 +205,12 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     else
         throw(ArgumentError("compression_method must be Deflate or Store"))
     end
-    entry.method = compression_method
-    entry.bit_flags |= level_bits
-    local_header_size = write_local_header(io, entry)
-    w.partial_entry = PartialEntry(
-        entry,
-        local_header_size,
-        TranscodingStream(codec, io),
-    )
+    pe.bit_flags |= level_bits
+    pe.transcoder = TranscodingStream(codec, io)
+    pe.method = compression_method
+    
+    write_local_header(io, pe)
+    w.partial_entry = pe
     @assert iswritable(w)
     nothing
 end
@@ -235,59 +234,7 @@ function write_buffer(b::Vector{UInt8}, p::Int, x::String)::Int
     write_buffer(b, p, codeunits(x))
 end
 
-"""
-Always writes normal_local_header_size(entry) bytes
-"""
-function write_local_header(io::IO, entry::EntryInfo)
-    name_len::UInt16 = ncodeunits(entry.name)
-    b = zeros(UInt8, normal_local_header_size(entry))
-    p = 1
-    # Check for unsupported bit flags
-    @argcheck iszero(entry.bit_flags & 1<<3) "writing data descriptor not supported."
-    @argcheck !iszero(entry.bit_flags & 1<<11) "UTF-8 encoding is required."
-    @argcheck iszero(entry.bit_flags & 1<<13) "encrypted files not supported."
 
-    use_zip64 = need_zip64(entry)
-    p += write_buffer(b, p, 0x04034b50) # local file header signature
-    if use_zip64
-        @argcheck entry.version_needed ≥ 45
-    else
-        @argcheck entry.version_needed ≥ 20
-    end
-    p += write_buffer(b, p, entry.version_needed)
-    p += write_buffer(b, p, entry.bit_flags)
-    p += write_buffer(b, p, entry.method)
-    p += write_buffer(b, p, entry.dos_time)
-    p += write_buffer(b, p, entry.dos_date)
-    p += write_buffer(b, p, entry.crc32)
-    if use_zip64
-        p += write_buffer(b, p, -1%UInt32) # compressed size placeholder
-        p += write_buffer(b, p, -1%UInt32) # uncompressed size placeholder
-    else
-        p += write_buffer(b, p, UInt32(entry.compressed_size))
-        p += write_buffer(b, p, UInt32(entry.uncompressed_size))
-    end
-    p += write_buffer(b, p, name_len) # file name length
-    p += write_buffer(b, p, 0x0014) # extra field length
-    p += write_buffer(b, p, entry.name)
-    if use_zip64
-        p += write_buffer(b, p, 0x0001) # Zip 64 Header ID
-        p += write_buffer(b, p, 0x0010) # Local Zip 64 Length
-        p += write_buffer(b, p, entry.uncompressed_size) # Original uncompressed file size
-        p += write_buffer(b, p, entry.compressed_size) # Size of compressed data
-    else
-        # https://www.rubydoc.info/gems/rubyzip/1.2.1/Zip/ExtraField/Zip64Placeholder
-        # https://sourceforge.net/p/sevenzip/discussion/45797/thread/4309fbc12f/
-        p += write_buffer(b, p, 0x9999) # Zip 64 Placeholder Header ID
-        p += write_buffer(b, p, 0x0010) # Local Zip 64 Length
-        p += write_buffer(b, p, 0%UInt64) # Original uncompressed file size placeholder
-        p += write_buffer(b, p, 0%UInt64) # Size of compressed data placeholder
-    end
-    @assert p == length(b)+1
-    n = write(io, b)
-    n == p-1 || error("short write")
-    n
-end
 
 function assert_writeable(w::ZipWriter)
     if !iswritable(w)
@@ -307,42 +254,18 @@ function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::Int
     assert_writeable(w)
     pe::PartialEntry = w.partial_entry
     nb::UInt = unsafe_write(pe.transcoder, p, n)
-    pe.entry.crc32 = unsafe_crc32(p, nb, pe.entry.crc32)
-    pe.entry.uncompressed_size += nb
+    pe.crc32 = unsafe_crc32(p, nb, pe.crc32)
+    pe.uncompressed_size += nb
     # pe.entry.compressed_size is updated in zip_commitfile
     nb
 end
 
 function Base.position(w::ZipWriter)::Int64
     assert_writeable(w)
-    w.partial_entry.entry.uncompressed_size
+    w.partial_entry.uncompressed_size
 end
 
-function normalize_zip64!(entry::EntryInfo, force_zip64=false)
-    use_zip64 = (
-        force_zip64 ||
-        entry.compressed_size   > typemax(Int32) ||
-        entry.uncompressed_size > typemax(Int32) ||
-        entry.offset > typemax(Int32)
-    )
-    if use_zip64
-        entry.c_size_zip64 = true
-        entry.u_size_zip64 = true
-        entry.offset_zip64 = true
-        entry.n_disk_zip64 = false
-        entry.version_needed = max(entry.version_needed, UInt16(45))
-        b = zeros(UInt8, 8*3+4)
-        p = 1
-        p += write_buffer(b, p, 0x0001)
-        p += write_buffer(b, p, UInt16(8*3))
-        p += write_buffer(b, p, entry.uncompressed_size)
-        p += write_buffer(b, p, entry.compressed_size)
-        p += write_buffer(b, p, entry.offset)
-        entry.central_extras_buffer = b
-        entry.central_extras = [ExtraField(0x0001, 5:(8*3+4))]
-    end
-    nothing
-end
+
 
 """
     zip_commitfile(w::ZipWriter)
@@ -353,7 +276,6 @@ then rethrow the error.
 function zip_commitfile(w::ZipWriter)
     if iswritable(w)
         pe::PartialEntry = w.partial_entry
-        entry::EntryInfo = pe.entry
         w.partial_entry = nothing
         # If some error happens, the file will be partially written,
         # but not included in the central directory.
@@ -365,24 +287,23 @@ function zip_commitfile(w::ZipWriter)
             TranscodingStreams.finalize(pe.transcoder.codec)
         end
 
-        pe.entry.compressed_size = position(w._io) - entry.offset - pe.local_header_size
-        normalize_zip64!(entry, w.force_zip64)
-        
-        # note, make sure never to change the partial_entry except for these three things.
-        @assert normal_local_header_size(entry) == pe.local_header_size
-        if !all(iszero, (entry.uncompressed_size, entry.compressed_size, entry.crc32))
+        pe.compressed_size = position(w._io) - pe.offset - pe.local_header_size
+
+        # note, make sure never to change the except for these three things.
+        if !all(iszero, (pe.uncompressed_size, pe.compressed_size, pe.crc32))
             # Must go back and update the local header if any data was written.
             cur_offset = position(w._io)
             try
                 # TODO add better error message about requiring seekable IO if this fails
-                seek(w._io, entry.offset)
-                write_local_header(w._io, entry)
+                seek(w._io, pe.offset)
+                write_local_header(w._io, pe)
             finally
                 seek(w._io, cur_offset)
             end
         end
+        entry = append_entry!(w.central_dir_buffer, pe)
         if w.check_names
-            push!(w.used_names_lower, lowercase(entry.name))
+            push!(w.used_names_lower, lowercase(pe.name))
         end
         push!(w.entries, entry)
     end
@@ -442,26 +363,27 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     io = w._io
     offset = position(io)
     crc32 = zip_crc32(data)
-    entry = EntryInfo(;
+    pe = PartialEntry(;
         name=namestr,
         offset,
+        w.force_zip64,
         compressed_size=length(data),
         uncompressed_size=length(data),
         crc32,
     )
     if !isnothing(executable) && executable
-        entry.external_attrs = UInt32(0o0100755)<<16
+        pe.external_attrs = UInt32(0o0100755)<<16
     end
     # Manual override of external_attrs
     if !isnothing(external_attrs)
-        entry.external_attrs = external_attrs
+        pe.external_attrs = external_attrs
     end
-    normalize_zip64!(entry, w.force_zip64)
-    write_local_header(io, entry)
+    write_local_header(io, pe)
     write(io, data) == length(data) || error("short write")
     @assert !iswritable(w)
+    entry = append_entry!(w.central_dir_buffer, pe)
     if w.check_names
-        push!(w.used_names_lower, lowercase(entry.name))
+        push!(w.used_names_lower, lowercase(namestr))
     end
     push!(w.entries, entry)
     nothing
@@ -491,7 +413,7 @@ zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
 
 Creates a symbolic link to `target` with the name `link`.
 
-This is not supported by most zip extractors including the one in this package.
+This is not supported by most zip extractors.
 """
 function zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
     if w.check_names
@@ -501,6 +423,185 @@ function zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
     namestr = String(link)
     zip_writefile(w, namestr, codeunits(targetstr);
         external_attrs=UInt32(0o0120755)<<16,
+    )
+end
+
+function Base.close(w::ZipWriter)
+    if !w.closed
+        try
+            zip_commitfile(w)
+        finally
+            w.partial_entry = nothing
+            try
+                write_footer(w._io, w.entries, w.central_dir_buffer; w.force_zip64)
+            finally
+                @assert isnothing(w.partial_entry)
+                w.closed = true
+                w._own_io && close(w._io)
+            end
+        end
+    end
+    nothing
+end
+
+
+need_zip64(entry::PartialEntry)::Bool = (
+    entry.force_zip64                        ||
+    entry.compressed_size   > typemax(Int32) ||
+    entry.uncompressed_size > typemax(Int32) ||
+    entry.offset            > typemax(Int32)
+)
+
+"""
+Always writes 50 + ncodeunits(entry.name) bytes
+"""
+function write_local_header(io::IO, entry::PartialEntry)
+    name_len::UInt16 = ncodeunits(entry.name)
+    @assert entry.local_header_size == 50 + name_len
+    b = zeros(UInt8, entry.local_header_size)
+    p = 1
+
+    use_zip64 = need_zip64(entry)
+    version_needed = if use_zip64
+        UInt16(45)
+    else
+        UInt16(20)
+    end
+
+    p += write_buffer(b, p, 0x04034b50) # local file header signature
+    p += write_buffer(b, p, version_needed)
+    p += write_buffer(b, p, entry.bit_flags)
+    p += write_buffer(b, p, entry.method)
+    p += write_buffer(b, p, entry.dos_time)
+    p += write_buffer(b, p, entry.dos_date)
+    p += write_buffer(b, p, entry.crc32)
+    if use_zip64
+        p += write_buffer(b, p, -1%UInt32) # compressed size placeholder
+        p += write_buffer(b, p, -1%UInt32) # uncompressed size placeholder
+    else
+        p += write_buffer(b, p, UInt32(entry.compressed_size))
+        p += write_buffer(b, p, UInt32(entry.uncompressed_size))
+    end
+    p += write_buffer(b, p, name_len) # file name length
+    p += write_buffer(b, p, 0x0014) # extra field length
+    p += write_buffer(b, p, entry.name)
+    if use_zip64
+        p += write_buffer(b, p, 0x0001) # Zip 64 Header ID
+        p += write_buffer(b, p, 0x0010) # Local Zip 64 Length
+        p += write_buffer(b, p, entry.uncompressed_size) # Original uncompressed file size
+        p += write_buffer(b, p, entry.compressed_size) # Size of compressed data
+    else
+        # https://www.rubydoc.info/gems/rubyzip/1.2.1/Zip/ExtraField/Zip64Placeholder
+        # https://sourceforge.net/p/sevenzip/discussion/45797/thread/4309fbc12f/
+        p += write_buffer(b, p, 0x9999) # Zip 64 Placeholder Header ID
+        p += write_buffer(b, p, 0x0010) # Local Zip 64 Length
+        p += write_buffer(b, p, 0%UInt64) # Original uncompressed file size placeholder
+        p += write_buffer(b, p, 0%UInt64) # Size of compressed data placeholder
+    end
+    @assert p == length(b)+1
+    n = write(io, b)
+    n == p-1 || error("short write")
+    n
+end
+
+"""
+Add the entry to the end of the central directory buffer `b`.
+Also return an EntryInfo.
+"""
+function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
+    use_zip64 = need_zip64(pe)
+    version_needed = if use_zip64
+        UInt16(45)
+    else
+        UInt16(20)
+    end
+    # Note these conversions can fail if the names
+    # or comments are too long.
+    name_len::UInt16 = ncodeunits(pe.name)
+    comment_len::UInt16 = ncodeunits(pe.comment)
+    extra_len::UInt16 = if use_zip64
+        8*3+4
+    else
+        0
+    end
+    version_made = UInt8(63)
+    os = UNIX
+
+    old_len_b::Int = length(b)
+    added_len::Int = 46 + Int(name_len) + Int(extra_len) + Int(comment_len)
+    new_len_b::Int = old_len_b + added_len
+    # make sure this doesn't overflow.
+    @argcheck new_len_b > old_len_b
+    resize!(b, new_len_b)
+    p = old_len_b + 1
+    p += write_buffer(b, p, 0x02014b50) # central file header signature
+    p += write_buffer(b, p, version_made)
+    p += write_buffer(b, p, os)
+    p += write_buffer(b, p, version_needed)
+    p += write_buffer(b, p, pe.bit_flags)
+    p += write_buffer(b, p, pe.method)
+    p += write_buffer(b, p, pe.dos_time)
+    p += write_buffer(b, p, pe.dos_date)
+    p += write_buffer(b, p, pe.crc32)
+    if use_zip64
+        p += write_buffer(b, p, -1%UInt32)
+        p += write_buffer(b, p, -1%UInt32)
+    else
+        p += write_buffer(b, p, UInt32(pe.compressed_size))
+        p += write_buffer(b, p, UInt32(pe.uncompressed_size))
+    end
+    p += write_buffer(b, p, name_len)
+    p += write_buffer(b, p, extra_len)
+    p += write_buffer(b, p, comment_len)
+    # disk number start
+    p += write_buffer(b, p, UInt16(0))
+    # internal_attrs
+    p += write_buffer(b, p, UInt16(0))
+    p += write_buffer(b, p, pe.external_attrs)
+    if use_zip64
+        p += write_buffer(b, p, -1%UInt32)
+    else
+        p += write_buffer(b, p, UInt32(pe.offset))
+    end
+    p += write_buffer(b, p, pe.name)
+    name_view = StringView(view(b, p-name_len:p-1))
+    central_extras_buffer = empty_buffer
+    central_extras = empty_extra_fields
+    if use_zip64
+        p += write_buffer(b, p, 0x0001)
+        p += write_buffer(b, p, UInt16(8*3))
+        p += write_buffer(b, p, pe.uncompressed_size)
+        p += write_buffer(b, p, pe.compressed_size)
+        p += write_buffer(b, p, pe.offset)
+        central_extras_buffer = view(b, p-extra_len:p-1)
+        central_extras = [ExtraField(0x0001, 5:(8*3+4))]
+    end
+    p += write_buffer(b, p, pe.comment)
+    comment_view = StringView(view(b, p-comment_len:p-1))
+    @assert p == length(b)+1
+    
+    EntryInfo(
+        version_made,
+        os,
+        version_needed,
+        pe.bit_flags,
+        pe.method,
+        pe.dos_time,
+        pe.dos_date,
+        pe.crc32,
+        pe.compressed_size,
+        pe.uncompressed_size,
+        pe.offset,
+        use_zip64,
+        use_zip64,
+        use_zip64,
+        false,
+        UInt16(0),
+        pe.external_attrs,
+        name_view,
+        comment_view,
+        central_extras_buffer,
+        central_extras,
     )
 end
 
@@ -556,18 +657,21 @@ function write_central_header(io::IO, entry::EntryInfo)
     n
 end
 
-function write_footer(io::IO, entries::Vector{EntryInfo}; force_zip64::Bool=false)
+function write_footer(
+        io::IO,
+        entries::Vector{EntryInfo},
+        central_dir_buffer::Vector{UInt8};
+        force_zip64::Bool=false
+    )
     start_of_central_dir = position(io)
-    for entry in entries
-        write_central_header(io, entry)
-    end
+    size_of_central_dir = write(io, central_dir_buffer)
     end_of_central_dir = position(io)
-    size_of_central_dir = end_of_central_dir - start_of_central_dir
+    size_of_central_dir == length(central_dir_buffer) || error("short write")
     number_of_entries = length(entries)
     use_eocd64 = (
-        force_zip64 ||
-        number_of_entries > typemax(Int16) ||
-        size_of_central_dir > typemax(Int32) ||
+        force_zip64                           ||
+        number_of_entries    > typemax(Int16) ||
+        size_of_central_dir  > typemax(Int32) ||
         start_of_central_dir > typemax(Int32)
     )
     tailsize = 22
@@ -608,22 +712,4 @@ function write_footer(io::IO, entries::Vector{EntryInfo}; force_zip64::Bool=fals
     n = write(io, b)
     n == p-1 || error("short write")
     tailsize + size_of_central_dir
-end
-
-function Base.close(w::ZipWriter)
-    if !w.closed
-        try
-            zip_commitfile(w)
-        finally
-            w.partial_entry = nothing
-            try
-                write_footer(w._io, w.entries; w.force_zip64)
-            finally
-                @assert isnothing(w.partial_entry)
-                w.closed = true
-                w._own_io && close(w._io)
-            end
-        end
-    end
-    nothing
 end

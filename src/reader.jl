@@ -30,22 +30,6 @@ function Base.:(==)(x::EntryInfo, y::EntryInfo)
     take!(iox) == take!(ioy)
 end
 
-
-need_zip64(entry::EntryInfo)::Bool = (
-    entry.u_size_zip64 ||
-    entry.c_size_zip64 ||
-    entry.offset_zip64 ||
-    entry.n_disk_zip64
-)
-
-"""
-Return the size of a typical local header for an entry.
-Note, zip files in the wild may have shorter 
-or longer local headers if they have a different 
-amount of local extra fields.
-"""
-normal_local_header_size(entry::EntryInfo) = 50 + ncodeunits(entry.name)
-
 """
 Return the minimum size of a local header for an entry.
 """
@@ -57,7 +41,7 @@ const HasEntries = Union{ZipFileReader,ZipWriter,ZipBufferReader}
 # Getters
 
 zip_nentries(x::HasEntries) = length(x.entries)
-zip_entryname(x::HasEntries, i) = x.entries[i].name
+zip_entryname(x::HasEntries, i)::String = x.entries[i].name
 zip_entrynames(x::HasEntries) = String[zip_entryname(x,i) for i in 1:zip_nentries(x)]
 zip_entry_isdir(x::HasEntries, i) = endswith(x.entries[i].name, "/")
 
@@ -131,14 +115,14 @@ function check_EOCD64_used(io::IO, eocd_offset)::Bool
 end
 
 """
-    parse_central_directory(io::IO)::Tuple{Vector{EntryInfo}, Int64}
+    parse_central_directory(io::IO)::Tuple{Vector{EntryInfo}, Vector{UInt8}, Int64}
 
 Where `io` must be readable and seekable.
 `io` is assumed to not be changed while this function runs.
 
-Return the entries, and the offset in `io` of the start of the central directory as a named tuple. `(;entries, central_dir_offset)`
+Return the entries, the raw data of the central directory, and the offset in `io` of the start of the central directory as a named tuple. `(;entries, central_dir_buffer, central_dir_offset)`
 
-The central directory is after all file data.
+The central directory is after all entry data.
 
 """
 function parse_central_directory(io::IO)
@@ -235,36 +219,41 @@ function parse_central_directory(io::IO)
         end
     end
     seek(io, central_dir_offset)
+    central_dir_buffer::Vector{UInt8} = read(io)
+    io_b = IOBuffer(central_dir_buffer)
+    seekstart(io_b)
     # parse central directory headers
-    entries = EntryInfo[]
+    entries = Vector{EntryInfo}(undef, num_entries)
     for i in 1:num_entries
-        local entry = EntryInfo(;name="", offset=0)
         # central file header signature
-        @argcheck readle(io, UInt32) == 0x02014b50
-        entry.version_made = readle(io, UInt8)
-        entry.os = readle(io, UInt8)
-        entry.version_needed = readle(io, UInt16)
-        entry.bit_flags = readle(io, UInt16)
-        entry.method = readle(io, UInt16)
-        entry.dos_time = readle(io, UInt16)
-        entry.dos_date = readle(io, UInt16)
-        entry.crc32 = readle(io, UInt32)
-        local c_size32 = readle(io, UInt32)
-        local u_size32 = readle(io, UInt32)
-        local name_len = readle(io, UInt16)
-        local extras_len = readle(io, UInt16)
-        local comment_len = readle(io, UInt16)
-        local disk16 = readle(io, UInt16)
-        entry.internal_attrs = readle(io, UInt16)
-        entry.external_attrs = readle(io, UInt32)
-        local offset32 = readle(io, UInt32)
-
-        entry.name = String(read(io, name_len))
-        @argcheck ncodeunits(entry.name) == name_len
-
+        @argcheck readle(io_b, UInt32) == 0x02014b50
+        local version_made = readle(io_b, UInt8)
+        local os = readle(io_b, UInt8)
+        local version_needed = readle(io_b, UInt16)
+        local bit_flags = readle(io_b, UInt16)
+        local method = readle(io_b, UInt16)
+        local dos_time = readle(io_b, UInt16)
+        local dos_date = readle(io_b, UInt16)
+        local crc32 = readle(io_b, UInt32)
+        local c_size32 = readle(io_b, UInt32)
+        local u_size32 = readle(io_b, UInt32)
+        local name_len = readle(io_b, UInt16)
+        local extras_len = readle(io_b, UInt16)
+        local comment_len = readle(io_b, UInt16)
+        local disk16 = readle(io_b, UInt16)
+        local internal_attrs = readle(io_b, UInt16)
+        local external_attrs = readle(io_b, UInt32)
+        local offset32 = readle(io_b, UInt32)
+        local name_start = position(io_b) + 1
+        skip(io_b, name_len)
+        local name_end = position(io_b)
+        local name = StringView(view(central_dir_buffer, name_start:name_end))
         #reading the variable sized extra fields
-        if !iszero(extras_len)
-            local extra_b = read(io, extras_len)
+        local central_extras, extra_b = if !iszero(extras_len)
+            local extra_start = position(io_b) + 1
+            skip(io_b, extras_len)
+            local extra_end = position(io_b)
+            local extra_b = view(central_dir_buffer, extra_start:extra_end)
             local central_extras = ExtraField[]
             local extras_bytes_left::Int = extras_len
             local p::Int = 1
@@ -277,70 +266,102 @@ function parse_central_directory(io::IO)
                 @argcheck data_size ≤ extras_bytes_left
                 extras_bytes_left -= data_size
                 push!(central_extras, ExtraField(id, (p:p+data_size-1)))
+                p += data_size
             end
-            entry.central_extras = central_extras
-            entry.central_extras_buffer = extra_b
+            central_extras, extra_b
+        else
+            empty_extra_fields, empty_buffer
         end
 
-        if !iszero(comment_len)
-            entry.comment = String(read(io, comment_len))
-            @argcheck ncodeunits(entry.comment) == comment_len
+        local comment = if !iszero(comment_len)
+            local comment_start = position(io_b) + 1
+            skip(io_b, comment_len)
+            local comment_end = position(io_b)
+            StringView(view(central_dir_buffer, comment_start:comment_end))
+        else
+            StringView(empty_buffer)
         end
 
         # Parse Zip64 and check disk number is 0
         # Assume no zip64 is used, unless the extra field is found
-        entry.uncompressed_size = u_size32
-        entry.compressed_size = c_size32
-        entry.offset = offset32
+        local uncompressed_size::UInt64 = u_size32
+        local compressed_size::UInt64 = c_size32
+        local offset::UInt64 = offset32
         local n_disk::UInt32 = disk16
-        entry.c_size_zip64 = false
-        entry.u_size_zip64 = false
-        entry.offset_zip64 = false
-        entry.n_disk_zip64 = false
+        local c_size_zip64 = false
+        local u_size_zip64 = false
+        local offset_zip64 = false
+        local n_disk_zip64 = false
         if !iszero(extras_len)
-            local zip64_idx = findfirst(x->(x.id==0x0001), entry.central_extras)
-            if !isnothing(zip64_idx) && entry.version_needed ≥ 45
+            local zip64_idx = findfirst(x->(x.id==0x0001), central_extras)
+            if !isnothing(zip64_idx) && version_needed ≥ 45
                 local zip64_data = view(
-                    entry.central_extras_buffer,
-                    entry.central_extras[zip64_idx].data_range,
+                    extra_b,
+                    central_extras[zip64_idx].data_range,
                 )
                 local b = IOBuffer(zip64_data)
                 if u_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                    entry.uncompressed_size = readle(b, UInt64)
-                    entry.u_size_zip64 = true
+                    uncompressed_size = readle(b, UInt64)
+                    u_size_zip64 = true
                 end
                 if c_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                    entry.compressed_size = readle(b, UInt64)
-                    entry.c_size_zip64 = true
+                    compressed_size = readle(b, UInt64)
+                    c_size_zip64 = true
                 end
                 if offset32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                    entry.offset = readle(b, UInt64)
-                    entry.offset_zip64 = true
+                    offset = readle(b, UInt64)
+                    offset_zip64 = true
                 end
                 if disk16 == -1%UInt16 && bytesavailable(b) ≥ 4
                     n_disk = readle(b, UInt32)
-                    entry.n_disk_zip64 = true
+                    n_disk_zip64 = true
                 end
             end
         end
         @argcheck n_disk == 0
-        push!(entries, entry)
+        entries[i] = EntryInfo(
+            version_made::UInt8,
+            os::UInt8,
+            version_needed::UInt16,
+            bit_flags::UInt16,
+            method::UInt16,
+            dos_time::UInt16,
+            dos_date::UInt16,
+            crc32::UInt32,
+            compressed_size::UInt64,
+            uncompressed_size::UInt64,
+            offset::UInt64,
+            c_size_zip64::Bool,
+            u_size_zip64::Bool,
+            offset_zip64::Bool,
+            n_disk_zip64::Bool,
+            internal_attrs::UInt16,
+            external_attrs::UInt32,
+            name,
+            comment,
+            extra_b,
+            central_extras,
+        )
     end
     # Maybe num_entries was too small: See https://github.com/thejoshwolfe/yauzl/issues/60
     # In that case just log a warning
-    if readle(io, UInt32) == 0x02014b50
+    if readle(io_b, UInt32) == 0x02014b50
         @warn "There may be some entries that are being ignored"
     end
+    skip(io_b, -4)
 
-    (;entries, central_dir_offset)
+    resize!(central_dir_buffer, position(io_b))
+
+    (;entries, central_dir_buffer, central_dir_offset)
 end
 
 function ZipFileReader(filename::AbstractString)
     io = open(filename; lock=false)
     try # parse entries
-        entries, central_dir_offset = parse_central_directory(io)
+        entries, central_dir_buffer, central_dir_offset  = parse_central_directory(io)
         ZipFileReader(
             entries,
+            central_dir_buffer,
             central_dir_offset,
             io,
             Ref(1),
@@ -536,8 +557,8 @@ end
 
 function ZipBufferReader(data::T) where T<:AbstractVector{UInt8}
     io = IOBuffer(data)
-    entries, central_dir_offset = parse_central_directory(io)
-    ZipBufferReader{T}(entries, central_dir_offset, data)
+    entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
+    ZipBufferReader{T}(entries, central_dir_buffer, central_dir_offset, data)
 end
 
 function zip_openentry(r::ZipBufferReader, i::Integer)

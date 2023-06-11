@@ -2,6 +2,7 @@
 LibArchive_jll = "1e303b3e-d4db-56ce-88c4-91e52606a1a8"
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
 PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+StringViews = "354b36f9-a18e-4713-926e-db85100087ba"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TranscodingStreams = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 ZipArchives = "49080126-0e18-4c2a-b176-c102e4b3760c"
