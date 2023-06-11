@@ -249,28 +249,30 @@ function parse_central_directory(io::IO)
         local name_end = position(io_b)
         local name = StringView(view(central_dir_buffer, name_start:name_end))
         #reading the variable sized extra fields
-        local central_extras, extra_b = if !iszero(extras_len)
-            local extra_start = position(io_b) + 1
-            skip(io_b, extras_len)
-            local extra_end = position(io_b)
-            local extra_b = view(central_dir_buffer, extra_start:extra_end)
-            local central_extras = ExtraField[]
-            local extras_bytes_left::Int = extras_len
-            local p::Int = 1
-            while extras_bytes_left ≥ 4
-                @inbounds(local id::UInt16 = UInt16(extra_b[p+1])<<8 | UInt16(extra_b[p]))
-                p += 2
-                @inbounds(local data_size::UInt16 =  UInt16(extra_b[p+1])<<8 | UInt16(extra_b[p]))
-                p += 2
-                extras_bytes_left -= 4
-                @argcheck data_size ≤ extras_bytes_left
-                extras_bytes_left -= data_size
-                push!(central_extras, ExtraField(id, (p:p+data_size-1)))
-                p += data_size
+        local central_extras, central_extras_buffer = let 
+            if !iszero(extras_len)
+                local extra_start = position(io_b) + 1
+                skip(io_b, extras_len)
+                local extra_end = position(io_b)
+                local extra_b = view(central_dir_buffer, extra_start:extra_end)
+                local extras = ExtraField[]
+                local extras_bytes_left::Int = extras_len
+                local p::Int = 1
+                while extras_bytes_left ≥ 4
+                    @inbounds(local id::UInt16 = UInt16(extra_b[p+1])<<8 | UInt16(extra_b[p]))
+                    p += 2
+                    @inbounds(local data_size::UInt16 =  UInt16(extra_b[p+1])<<8 | UInt16(extra_b[p]))
+                    p += 2
+                    extras_bytes_left -= 4
+                    @argcheck data_size ≤ extras_bytes_left
+                    extras_bytes_left -= data_size
+                    push!(extras, ExtraField(id, (p:p+data_size-1)))
+                    p += data_size
+                end
+                extras, extra_b
+            else
+                empty_extra_fields, empty_buffer
             end
-            central_extras, extra_b
-        else
-            empty_extra_fields, empty_buffer
         end
 
         local comment = if !iszero(comment_len)
@@ -296,7 +298,7 @@ function parse_central_directory(io::IO)
             local zip64_idx = findfirst(x->(x.id==0x0001), central_extras)
             if !isnothing(zip64_idx) && version_needed ≥ 45
                 local zip64_data = view(
-                    extra_b,
+                    central_extras_buffer,
                     central_extras[zip64_idx].data_range,
                 )
                 local b = IOBuffer(zip64_data)
@@ -339,7 +341,7 @@ function parse_central_directory(io::IO)
             external_attrs::UInt32,
             name,
             comment,
-            extra_b,
+            central_extras_buffer,
             central_extras,
         )
     end
