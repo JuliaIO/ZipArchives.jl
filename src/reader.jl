@@ -22,14 +22,6 @@ readle(io::IO, ::Type{UInt16}) = htol(read(io, UInt16))
 readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
 
 
-function Base.:(==)(x::EntryInfo, y::EntryInfo)
-    iox = IOBuffer()
-    write_central_header(iox, x)
-    ioy = IOBuffer()
-    write_central_header(ioy, y)
-    take!(iox) == take!(ioy)
-end
-
 """
 Return the minimum size of a local header for an entry.
 """

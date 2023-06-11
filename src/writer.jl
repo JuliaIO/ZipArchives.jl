@@ -605,58 +605,6 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
     )
 end
 
-"""
-Just write whatever is in entry, don't normalize or check for issues here.
-"""
-function write_central_header(io::IO, entry::EntryInfo)
-    name_len::UInt16 = ncodeunits(entry.name)
-    extra_len::UInt16 = length(entry.central_extras_buffer)
-    comment_len::UInt16 = ncodeunits(entry.comment)
-    b = zeros(UInt8, 46 + Int(name_len) + Int(extra_len) + Int(comment_len))
-    p = 1
-    p += write_buffer(b, p, 0x02014b50) # central file header signature
-    p += write_buffer(b, p, entry.version_made)
-    p += write_buffer(b, p, entry.os)
-    p += write_buffer(b, p, entry.version_needed)
-    p += write_buffer(b, p, entry.bit_flags)
-    p += write_buffer(b, p, entry.method)
-    p += write_buffer(b, p, entry.dos_time)
-    p += write_buffer(b, p, entry.dos_date)
-    p += write_buffer(b, p, entry.crc32)
-    if entry.c_size_zip64
-        p += write_buffer(b, p, -1%UInt32)
-    else
-        p += write_buffer(b, p, UInt32(entry.compressed_size))
-    end
-    if entry.u_size_zip64
-        p += write_buffer(b, p, -1%UInt32)
-    else
-        p += write_buffer(b, p, UInt32(entry.uncompressed_size))
-    end
-    p += write_buffer(b, p, name_len)
-    p += write_buffer(b, p, extra_len)
-    p += write_buffer(b, p, comment_len)
-    if entry.n_disk_zip64 # disk number start
-        p += write_buffer(b, p, -1%UInt16)
-    else
-        p += write_buffer(b, p, UInt16(0))
-    end
-    p += write_buffer(b, p, entry.internal_attrs)
-    p += write_buffer(b, p, entry.external_attrs)
-    if entry.offset_zip64
-        p += write_buffer(b, p, -1%UInt32)
-    else
-        p += write_buffer(b, p, UInt32(entry.offset))
-    end
-    p += write_buffer(b, p, entry.name)
-    p += write_buffer(b, p, entry.central_extras_buffer)
-    p += write_buffer(b, p, entry.comment)
-    @assert p == length(b)+1
-    n = write(io, b)
-    n == p-1 || error("short write")
-    n
-end
-
 function write_footer(
         io::IO,
         entries::Vector{EntryInfo},
