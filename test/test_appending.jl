@@ -26,3 +26,30 @@ using Test
         end
     end
 end
+
+@testset "zip_append_archive no trunc" begin
+    io = IOBuffer()
+    w1 = ZipWriter(io)
+    zip_writefile(w1, "testfile1.txt", codeunits("the is a file in the 1 part"))
+    close(w1)
+    p1 = position(io)
+    w2 = zip_append_archive(io; trunc_footer=false)
+    p2 = position(io)
+    @test p1 == p2
+    close(w2)
+    p3 = position(io)
+    @test p3 != p2
+    w3 = zip_append_archive(io; trunc_footer=true)
+    p4 = position(io)
+    @test p4 == p2
+    close(w3)
+    @test p3 == position(io)
+    r = ZipBufferReader(take!(io))
+    @test zip_names(r) == ["testfile1.txt"]
+    for i in 1:1
+        zip_test_entry(r, i)
+        zip_openentry(r, i) do file
+            @test read(file, String) == "the is a file in the $i part"
+        end
+    end
+end
