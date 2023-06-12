@@ -10,4 +10,5 @@ Random.seed!(1234)
 include("test_simple-usage.jl")
 include("test_writer.jl")
 include("test_reader.jl")
+include("test_appending.jl")
 

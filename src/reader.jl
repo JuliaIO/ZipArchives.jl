@@ -7,7 +7,7 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
-function zip_crc32(data::DenseVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
+function zip_crc32(data::Base.ByteArray, crc::UInt32=UInt32(0))::UInt32
     GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), crc)
 end
 

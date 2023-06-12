@@ -105,6 +105,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         if w.check_names
             w.used_names_lower = Set{String}(lowercase(e.name) for e in entries)
         end
+        w
     catch # close io if there is an error parsing entries
         if zip_kwargs.own_io
             close(io)
@@ -113,7 +114,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
     end
 end
 function zip_append_archive(f::Function, io::IO; kwargs...)::ZipWriter
-    w = zip_appendzip(io; kwargs...)
+    w = zip_append_archive(io; kwargs...)
     try
         f(w)
     finally
@@ -122,13 +123,13 @@ function zip_append_archive(f::Function, io::IO; kwargs...)::ZipWriter
     w
 end
 function zip_append_archive(filename::AbstractString; open_kwargs...)
-    zip_appendzip(
+    zip_append_archive(
         Base.open(filename; read=true, write=true, open_kwargs...);
         zip_kwargs=(;own_io=true)
     )
 end
 function zip_append_archive(f::Function, filename::AbstractString; open_kwargs...)
-    zip_appendzip(
+    zip_append_archive(
         f,
         Base.open(filename; read=true, write=true, open_kwargs...);
         zip_kwargs=(;own_io=true)
