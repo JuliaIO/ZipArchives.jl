@@ -2,14 +2,6 @@ using CodecZlib
 using TranscodingStreams
 using StringViews
 
-struct ExtraField
-    id::UInt16
-    "Where the data for the extra field is in `central_extras_buffer`
-    This doesn't include the size and id"
-    data_range::UnitRange{Int64}
-end
-
-const empty_extra_fields = ExtraField[]
 const empty_buffer = view(UInt8[],1:0)
 
 """
@@ -36,8 +28,6 @@ struct EntryInfo
     external_attrs::UInt32
     name::StringView{typeof(empty_buffer)}
     comment::StringView{typeof(empty_buffer)}
-    central_extras_buffer::typeof(empty_buffer)
-    central_extras::Vector{ExtraField}
 end
 
 struct ZipFileReader

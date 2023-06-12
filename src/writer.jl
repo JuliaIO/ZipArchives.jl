@@ -565,16 +565,12 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
     end
     p += write_buffer(b, p, pe.name)
     name_view = StringView(view(b, p-name_len:p-1))
-    central_extras_buffer = empty_buffer
-    central_extras = empty_extra_fields
     if use_zip64
         p += write_buffer(b, p, 0x0001)
         p += write_buffer(b, p, UInt16(8*3))
         p += write_buffer(b, p, pe.uncompressed_size)
         p += write_buffer(b, p, pe.compressed_size)
         p += write_buffer(b, p, pe.offset)
-        central_extras_buffer = view(b, p-extra_len:p-1)
-        central_extras = [ExtraField(0x0001, 5:(8*3+4))]
     end
     p += write_buffer(b, p, pe.comment)
     comment_view = StringView(view(b, p-comment_len:p-1))
@@ -600,8 +596,6 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
         pe.external_attrs,
         name_view,
         comment_view,
-        central_extras_buffer,
-        central_extras,
     )
 end
 

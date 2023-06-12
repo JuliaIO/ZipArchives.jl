@@ -241,41 +241,6 @@ function parse_central_directory(io::IO)
         local name_end = position(io_b)
         local name = StringView(view(central_dir_buffer, name_start:name_end))
         #reading the variable sized extra fields
-        local central_extras, central_extras_buffer = let 
-            if !iszero(extras_len)
-                local extra_start = position(io_b) + 1
-                skip(io_b, extras_len)
-                local extra_end = position(io_b)
-                local extra_b = view(central_dir_buffer, extra_start:extra_end)
-                local extras = ExtraField[]
-                local extras_bytes_left::Int = extras_len
-                local p::Int = 1
-                while extras_bytes_left ≥ 4
-                    @inbounds(local id::UInt16 = UInt16(extra_b[p+1])<<8 | UInt16(extra_b[p]))
-                    p += 2
-                    @inbounds(local data_size::UInt16 =  UInt16(extra_b[p+1])<<8 | UInt16(extra_b[p]))
-                    p += 2
-                    extras_bytes_left -= 4
-                    @argcheck data_size ≤ extras_bytes_left
-                    extras_bytes_left -= data_size
-                    push!(extras, ExtraField(id, (p:p+data_size-1)))
-                    p += data_size
-                end
-                extras, extra_b
-            else
-                empty_extra_fields, empty_buffer
-            end
-        end
-
-        local comment = if !iszero(comment_len)
-            local comment_start = position(io_b) + 1
-            skip(io_b, comment_len)
-            local comment_end = position(io_b)
-            StringView(view(central_dir_buffer, comment_start:comment_end))
-        else
-            StringView(empty_buffer)
-        end
-
         # Parse Zip64 and check disk number is 0
         # Assume no zip64 is used, unless the extra field is found
         local uncompressed_size::UInt64 = u_size32
@@ -287,32 +252,52 @@ function parse_central_directory(io::IO)
         local offset_zip64 = false
         local n_disk_zip64 = false
         if !iszero(extras_len)
-            local zip64_idx = findfirst(x->(x.id==0x0001), central_extras)
-            if !isnothing(zip64_idx) && version_needed ≥ 45
-                local zip64_data = view(
-                    central_extras_buffer,
-                    central_extras[zip64_idx].data_range,
-                )
-                local b = IOBuffer(zip64_data)
-                if u_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                    uncompressed_size = readle(b, UInt64)
-                    u_size_zip64 = true
+            local extras_bytes_left::Int = extras_len
+            # local p::Int = 1
+            while extras_bytes_left ≥ 4
+                local id = readle(io_b, UInt16)
+                local data_size::Int = readle(io_b, UInt16)
+                local data_size_left::Int = data_size
+                extras_bytes_left -= 4
+                @argcheck data_size ≤ extras_bytes_left
+                if id == 0x0001 && version_needed ≥ 45
+                    if u_size32 == -1%UInt32 && data_size_left ≥ 8
+                        uncompressed_size = readle(io_b, UInt64)
+                        u_size_zip64 = true
+                        data_size_left -= 8
+                    end
+                    if c_size32 == -1%UInt32 && data_size_left ≥ 8
+                        compressed_size = readle(io_b, UInt64)
+                        c_size_zip64 = true
+                        data_size_left -= 8
+                    end
+                    if offset32 == -1%UInt32 && data_size_left ≥ 8
+                        offset = readle(io_b, UInt64)
+                        offset_zip64 = true
+                        data_size_left -= 8
+                    end
+                    if disk16 == -1%UInt16 && data_size_left ≥ 4
+                        n_disk = readle(io_b, UInt32)
+                        @argcheck n_disk == 0
+                        n_disk_zip64 = true
+                        data_size_left -= 4
+                    end
                 end
-                if c_size32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                    compressed_size = readle(b, UInt64)
-                    c_size_zip64 = true
-                end
-                if offset32 == -1%UInt32 && bytesavailable(b) ≥ 8
-                    offset = readle(b, UInt64)
-                    offset_zip64 = true
-                end
-                if disk16 == -1%UInt16 && bytesavailable(b) ≥ 4
-                    n_disk = readle(b, UInt32)
-                    n_disk_zip64 = true
-                end
+                skip(io_b, data_size_left)
+                extras_bytes_left -= data_size
             end
+            skip(io_b, extras_bytes_left)
         end
         @argcheck n_disk == 0
+
+        local comment = if !iszero(comment_len)
+            local comment_start = position(io_b) + 1
+            skip(io_b, comment_len)
+            local comment_end = position(io_b)
+            StringView(view(central_dir_buffer, comment_start:comment_end))
+        else
+            StringView(empty_buffer)
+        end
         entries[i] = EntryInfo(
             version_made::UInt8,
             os::UInt8,
@@ -333,8 +318,6 @@ function parse_central_directory(io::IO)
             external_attrs::UInt32,
             name,
             comment,
-            central_extras_buffer,
-            central_extras,
         )
     end
     # Maybe num_entries was too small: See https://github.com/thejoshwolfe/yauzl/issues/60
