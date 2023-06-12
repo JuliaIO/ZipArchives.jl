@@ -39,6 +39,7 @@ zip_name(x::HasEntries, i)::String = x.entries[i].name
 zip_names(x::HasEntries)::Vector{String} = String[zip_name(x,i) for i in 1:zip_nentries(x)]
 zip_uncompressed_size(x::HasEntries, i)::UInt64 = x.entries[i].uncompressed_size
 zip_compressed_size(x::HasEntries, i)::UInt64 = x.entries[i].compressed_size
+zip_iscompressed(x::HasEntries, i)::Bool = x.entries[i].method != Store
 zip_comment(x::HasEntries, i)::String = x.entries[i].comment
 zip_stored_crc32(x::HasEntries, i)::UInt32 = x.entries[i].crc32
 
@@ -82,14 +83,18 @@ This will also read the entry and check the crc32 matches.
 """
 function zip_test_entry(r::ZipReader, i)::Nothing
     crc32::UInt32 = 0
+    uncompressed_size::UInt64 = 0
     zip_openentry(r, i) do io
         buffer_size = 1<<12
         buffer = zeros(UInt8, buffer_size)
         GC.@preserve buffer while !eof(io)
             nb = readbytes!(io, buffer)
+            @argcheck uncompressed_size < typemax(Int64)
+            uncompressed_size += nb
             crc32 = unsafe_crc32(pointer(buffer), UInt(nb), crc32)
         end
     end
+    @argcheck uncompressed_size == zip_uncompressed_size(r, i)
     @argcheck crc32 == zip_stored_crc32(r, i)
     nothing
 end

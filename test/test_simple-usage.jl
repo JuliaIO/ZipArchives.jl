@@ -38,10 +38,23 @@ using Test
     ZipFileReader(filename) do r
         @test repr(r) == "ZipArchives.ZipFileReader($(repr(filename)))"
         zip_nentries(r) == 3
-        @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
+        @test zip_names(r) == ["test1.txt", "empty.txt", "test2.txt"]
+        @test zip_name(r, 3) == "test2.txt"
         zip_openentry(r, 1) do io
             @test read(io, String) == "I am data inside test1.txt in the zip file"
         end
+        # entries are not compressed by default
+        @test !zip_iscompressed(r, 1)
+        @test zip_compressed_size(r, 1) == ncodeunits("I am data inside test1.txt in the zip file")
+        @test zip_compressed_size(r, 1) == zip_uncompressed_size(r, 1)
+        # Test that an entry has a correct checksum.
+        zip_test_entry(r, 3)
+        # entries are not marked as executable by default
+        @test !zip_isexecutablefile(r, 1)
+        # entries are not marked as directories by default
+        @test !zip_isdir(r, 1)
+        # entry names are marked as utf8
+        @test zip_definitely_utf8(r, 1)
     end
 
     # Read a zip file with `ZipBufferReader` This doesn't need to be closed.

@@ -16,6 +16,7 @@ export zip_name
 export zip_names
 export zip_uncompressed_size
 export zip_compressed_size
+export zip_iscompressed
 export zip_stored_crc32
 export zip_definitely_utf8
 export zip_isdir
