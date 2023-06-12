@@ -115,6 +115,7 @@ end
         zip_newfile(w, "test")
         @test write(w, 0x00) == 1
         close(w)
+        @test_throws ArgumentError("ZipWriter is closed") write(w, 0x00)
     end
     @testset "aborting a file" begin
         filename = tempname()
