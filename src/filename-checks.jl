@@ -3,7 +3,7 @@ using ArgCheck
 function basic_name_check(name::String)
     @argcheck isvalid(name)
     @argcheck !startswith(name, "/")
-    @argcheck !contains(name, "\0")
+    @argcheck !contains(name, '\0')
     @argcheck !contains(name, '\\')
     @argcheck !contains(name, ':')
     @argcheck !contains(name, '"')

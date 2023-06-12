@@ -85,9 +85,10 @@ include("external_unzippers.jl")
             # Check file names and data match
             ZipFileReader(zippath) do dir
                 for i in 1:zip_nentries(dir)
-                    local name = zip_entryname(dir, i)
+                    local name = zip_name(dir, i)
                     local extracted_path = joinpath(tmpout, name)
                     @test isfile(extracted_path)
+                    zip_test_entry(dir, i)
                     zip_openentry(dir, i) do f
                         @test read(f) == read(extracted_path)
                     end

@@ -70,7 +70,7 @@ function unzip_infozip(zippath, dirpath)
 end
 
 
-unzippers = [
+unzippers = Any[
     unzip_p7zip,
     unzip_bsdtar,
     unzip_python,

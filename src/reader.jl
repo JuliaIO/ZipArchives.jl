@@ -27,17 +27,43 @@ Return the minimum size of a local header for an entry.
 """
 min_local_header_size(entry::EntryInfo) = 30 + ncodeunits(entry.name)
 
-const HasEntries = Union{ZipFileReader,ZipWriter,ZipBufferReader}
+const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
+
+const ZipReader = Union{ZipFileReader, ZipBufferReader}
 
 
 # Getters
 
-zip_nentries(x::HasEntries) = length(x.entries)
-zip_entryname(x::HasEntries, i)::String = x.entries[i].name
-zip_entrynames(x::HasEntries) = String[zip_entryname(x,i) for i in 1:zip_nentries(x)]
-zip_entry_isdir(x::HasEntries, i) = endswith(x.entries[i].name, "/")
+zip_nentries(x::HasEntries)::Int = length(x.entries)
+zip_name(x::HasEntries, i)::String = x.entries[i].name
+zip_names(x::HasEntries)::Vector{String} = String[zip_name(x,i) for i in 1:zip_nentries(x)]
+zip_uncompressed_size(x::HasEntries, i)::UInt64 = x.entries[i].uncompressed_size
+zip_compressed_size(x::HasEntries, i)::UInt64 = x.entries[i].compressed_size
+zip_comment(x::HasEntries, i)::String = x.entries[i].comment
+zip_stored_crc32(x::HasEntries, i)::UInt32 = x.entries[i].crc32
 
-function zip_entry_isexecutablefile(x::HasEntries, i)
+"""
+    zip_definitely_utf8(x::HasEntries, i)::Bool
+
+Return true if the entry definitely uses utf8 encoding for the name.
+
+Otherwise, the name should probably be treated as a sequence of bytes.
+
+Unlike may other zip file libraries, 
+this package will never attempt to alter saved filenames by converting to utf8.
+"""
+function zip_definitely_utf8(x::HasEntries, i)::Bool
+    entry = x.entries[i]
+    name::String = entry.name
+    (
+        isascii(name) ||
+        !iszero(entry.bit_flags & UInt16(1<<11)) && isvalid(name)
+    )
+end
+
+zip_isdir(x::HasEntries, i) = endswith(x.entries[i].name, "/")
+
+function zip_isexecutablefile(x::HasEntries, i)
     entry = x.entries[i]
     (
         entry.os == UNIX &&
@@ -46,9 +72,27 @@ function zip_entry_isexecutablefile(x::HasEntries, i)
     )
 end
 
-zip_entry_uncompressed_size(x::HasEntries, i) = x.entries[i].uncompressed_size
-zip_entry_compressed_size(x::HasEntries, i) = x.entries[i].compressed_size
+"""
+    zip_test_entry(x::ZipReader, i)::Nothing
 
+If the entry has an issue, error.
+Otherwise, return nothing.
+
+This will also read the entry and check the crc32 matches.
+"""
+function zip_test_entry(r::ZipReader, i)::Nothing
+    crc32::UInt32 = 0
+    zip_openentry(r, i) do io
+        buffer_size = 1<<12
+        buffer = zeros(UInt8, buffer_size)
+        GC.@preserve buffer while !eof(io)
+            nb = readbytes!(io, buffer)
+            crc32 = unsafe_crc32(pointer(buffer), UInt(nb), crc32)
+        end
+    end
+    @argcheck crc32 == zip_stored_crc32(r, i)
+    nothing
+end
 
 
 
@@ -448,7 +492,7 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     end
 end
 
-function zip_openentry(f::Function, r::Union{ZipFileReader, ZipBufferReader}, args...; kwargs...)
+function zip_openentry(f::Function, r::ZipReader, args...; kwargs...)
     io = zip_openentry(r, args...; kwargs...)
     try
         f(io)

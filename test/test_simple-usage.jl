@@ -26,7 +26,7 @@ using Test
         
         #Information about the previous files are in entries
         @test zip_nentries(w) == 1
-        @test zip_entryname(w, 1) == "test1.txt"
+        @test zip_name(w, 1) == "test1.txt"
 
         # Write data to "test2.txt" inside the zip file.
         zip_newfile(w, "test2.txt")
@@ -36,7 +36,7 @@ using Test
     # Read a zip file with `ZipFileReader`
     ZipFileReader(filename) do r
         zip_nentries(r) == 3
-        @test map(i->zip_entryname(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
+        @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
         zip_openentry(r, 1) do io
             @test read(io, String) == "I am data inside test1.txt in the zip file"
         end
@@ -49,7 +49,7 @@ using Test
     # make sure to never modify the array
     r = ZipBufferReader(data)
     zip_nentries(r) == 3
-    @test map(i->zip_entryname(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
+    @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
     zip_openentry(r, 1) do io
         @test read(io, String) == "I am data inside test1.txt in the zip file"
     end
