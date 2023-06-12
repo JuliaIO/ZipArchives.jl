@@ -1,5 +1,9 @@
 # High level API
 
+# This is commented out because of strange behavior on windows.
+# It is probably better to use 
+# https://github.com/JuliaBinaryWrappers/p7zip_jll.jl 
+# for high level operations for now.
 
 # """
 #     zip_add_path(
