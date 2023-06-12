@@ -36,10 +36,32 @@ end
         @test zip_nentries(r) == 1
         zip_test_entry(r, 1)
     end
+    data = read(filename)
     rm(filename)
+    r2 = ZipBufferReader(data)
+    @test zip_nentries(r2) == 1
+    zip_test_entry(r2, 1)
 end
 
 @testset "large offsets" begin
+    filename = tempname()
+    ZipWriter(filename) do w
+        x = rand(UInt8,2^20)
+        for i in 1:2^13
+            zip_writefile(w,"$i", x)
+        end
+    end
+    ZipFileReader(filename) do r
+        @test zip_nentries(r) == 2^13
+        for i in 1:2^13
+            @test zip_name(r, i) == "$(i)"
+            zip_test_entry(r, i)
+        end
+    end
+    rm(filename)
+end
+
+@testset "large offsets and many entries" begin
     filename = tempname()
     ZipWriter(filename) do w
         x = rand(UInt8,2^17)
