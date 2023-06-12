@@ -107,7 +107,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         end
         w
     catch # close io if there is an error parsing entries
-        if zip_kwargs.own_io
+        if get(Returns(false), zip_kwargs, :own_io)
             close(io)
         end
         rethrow()

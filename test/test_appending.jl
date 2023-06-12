@@ -53,3 +53,16 @@ end
         end
     end
 end
+
+@testset "zip_append_archive to a non zip file" begin
+    io = IOBuffer()
+    write(io, "hello world")
+    @test_throws ArgumentError("io isn't a zip file. Too small") w = zip_append_archive(io)
+    @test String(take!(io)) == "hello world"
+
+    # now with a file
+    filename = tempname()
+    write(filename, "hello world")
+    @test_throws ArgumentError("io isn't a zip file. Too small") w = zip_append_archive(filename)
+    @test String(read(filename)) == "hello world"
+end
