@@ -12,10 +12,12 @@ using Test
     # Otherwise make sure to close the ZipWriter to finish writing the file.
     ZipWriter(filename) do w
         @test repr(w) isa String
-        # Write data to "test1.txt" inside the zip archive.
+        # Write data to "test/test1.txt" inside the zip archive.
+        # Always use a / as a path separator even on windows.
+        @test_throws ArgumentError zip_newfile(w, "test\\test1.txt")
         # `zip_newfile` turns w into an IO that represents a file in the archive.
         @test zip_nentries(w) == 0
-        zip_newfile(w, "test1.txt")
+        zip_newfile(w, "test/test1.txt")
         write(w, "I am data inside test1.txt in the zip file")
 
         # The entries field isn't updated until the file is committed.
@@ -23,14 +25,14 @@ using Test
 
         # Write an empty file.
         # After calling `newfile` there is no direct way to edit any previous files in the archive.
-        zip_newfile(w, "empty.txt")
+        zip_newfile(w, "test/empty.txt")
         
         #Information about the previous files are in entries
         @test zip_nentries(w) == 1
-        @test zip_name(w, 1) == "test1.txt"
+        @test zip_name(w, 1) == "test/test1.txt"
 
         # Write data to "test2.txt" inside the zip file.
-        zip_newfile(w, "test2.txt")
+        zip_newfile(w, "test/test2.txt")
         write(w, "I am data inside test2.txt in the zip file")
     end
 
@@ -38,8 +40,8 @@ using Test
     ZipFileReader(filename) do r
         @test repr(r) == "ZipArchives.ZipFileReader($(repr(filename)))"
         zip_nentries(r) == 3
-        @test zip_names(r) == ["test1.txt", "empty.txt", "test2.txt"]
-        @test zip_name(r, 3) == "test2.txt"
+        @test zip_names(r) == ["test/test1.txt", "test/empty.txt", "test/test2.txt"]
+        @test zip_name(r, 3) == "test/test2.txt"
         zip_openentry(r, 1) do io
             @test read(io, String) == "I am data inside test1.txt in the zip file"
         end
@@ -65,7 +67,7 @@ using Test
     r = ZipBufferReader(data)
     @test repr(r) == "ZipArchives.ZipBufferReader($(data))"
     zip_nentries(r) == 3
-    @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
+    @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test/test1.txt", "test/empty.txt", "test/test2.txt"]
     zip_openentry(r, 1) do io
         @test read(io, String) == "I am data inside test1.txt in the zip file"
     end
