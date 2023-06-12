@@ -70,6 +70,13 @@ function ZipWriter(f::Function, filename::AbstractString; open_kwargs...)
     ZipWriter(f, Base.open(filename; write=true, open_kwargs...); own_io=true)
 end
 
+function Base.show(io::IO, w::ZipWriter)
+    print(io, "ZipArchives.ZipWriter(")
+    show(io, w._io)
+    print(io, ")")
+end
+
+
 """
     zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWriter
 

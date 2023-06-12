@@ -39,6 +39,7 @@ struct ZipFileReader
     _open::Ref{Bool}
     _lock::ReentrantLock
     _fsize::Int64
+    _name::String
 end
 
 """

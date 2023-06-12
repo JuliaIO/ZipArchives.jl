@@ -389,6 +389,7 @@ function ZipFileReader(filename::AbstractString)
             Ref(true),
             ReentrantLock(),
             filesize(io),
+            filename,
         )
     catch # close io if there is an error parsing entries
         close(io)
@@ -404,6 +405,13 @@ function ZipFileReader(f::Function, filename::AbstractString; kwargs...)
         close(r)
     end
 end
+
+function Base.show(io::IO, r::ZipFileReader)
+    print(io, "ZipArchives.ZipFileReader(")
+    print(io, repr(r._name))
+    print(io, ")")
+end
+
 
 Base.isopen(r::ZipFileReader)::Bool = r._open[]
 
@@ -581,6 +589,13 @@ function ZipBufferReader(data::T) where T<:AbstractVector{UInt8}
     entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
     ZipBufferReader{T}(entries, central_dir_buffer, central_dir_offset, data)
 end
+
+function Base.show(io::IO, r::ZipBufferReader)
+    print(io, "ZipArchives.ZipBufferReader(")
+    show(io, r.buffer)
+    print(io, ")")
+end
+
 
 function zip_openentry(r::ZipBufferReader, i::Integer)
     entry::EntryInfo = r.entries[i]

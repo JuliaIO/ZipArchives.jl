@@ -11,6 +11,7 @@ using Test
     # Using the do syntax ensures the file will be closed.
     # Otherwise make sure to close the ZipWriter to finish writing the file.
     ZipWriter(filename) do w
+        @test repr(w) isa String
         # Write data to "test1.txt" inside the zip archive.
         # `zip_newfile` turns w into an IO that represents a file in the archive.
         @test zip_nentries(w) == 0
@@ -35,6 +36,7 @@ using Test
 
     # Read a zip file with `ZipFileReader`
     ZipFileReader(filename) do r
+        @test repr(r) == "ZipArchives.ZipFileReader($(repr(filename)))"
         zip_nentries(r) == 3
         @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
         zip_openentry(r, 1) do io
@@ -48,6 +50,7 @@ using Test
     # After passing an array to ZipBufferReader
     # make sure to never modify the array
     r = ZipBufferReader(data)
+    @test repr(r) == "ZipArchives.ZipBufferReader($(data))"
     zip_nentries(r) == 3
     @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test1.txt", "empty.txt", "test2.txt"]
     zip_openentry(r, 1) do io
