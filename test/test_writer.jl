@@ -106,3 +106,65 @@ end
 if !Debug
     rm(tmp, recursive=true)
 end
+
+@testset "Writer errors" begin
+    @testset "writing without creating an entry" begin
+        filename = tempname()
+        w = ZipWriter(filename)
+        @test_throws ArgumentError("ZipWriter not writable, call zip_newfile first") write(w, 0x00)
+        zip_newfile(w, "test")
+        @test write(w, 0x00) == 1
+        close(w)
+    end
+    @testset "aborting a file" begin
+        filename = tempname()
+        w = ZipWriter(filename)
+        zip_newfile(w, "bad_file")
+        write(w, "sqrt(-1.0): ")
+        try
+            write(w, "$(sqrt(-1.0))")
+        catch
+        end
+        zip_abortfile(w)
+        zip_newfile(w, "good_file")
+        write(w, "sqrt(1.0): ")
+        write(w, "$(sqrt(1.0))")
+        zip_commitfile(w)
+        @test zip_nentries(w) == 1
+        close(w)
+        ZipFileReader(filename) do r
+            @test zip_names(r) == ["good_file"]
+            zip_openentry(r, 1) do file
+                @test read(file, String) == "sqrt(1.0): $(sqrt(1.0))"
+            end
+        end
+    end
+end
+
+@testset "writing non file entries" begin
+    # Doing any of the following is not recommended,
+    # and may create issues if the zip file is extracted into files.
+    io = IOBuffer()
+    w = ZipWriter(io; check_names=false)
+    zip_mkdir(w, "empty_dir")
+    # Adding symlinks requires check_names=false
+    ZipArchives.zip_symlink(w, "this is a invalid target", "symlink_entry")
+    zip_writefile(w, "script.sh", codeunits("#!/bin/sh\nls\n"); executable=true)
+    zip_newfile(w, "script2.sh"; executable=true)
+    println(w, "#!/bin/sh")
+    println(w, "echo 'hi'")
+    close(w)
+    r = ZipBufferReader(take!(io))
+    @test zip_names(r) == ["empty_dir/", "symlink_entry", "script.sh", "script2.sh"]
+    @test zip_isdir(r, 1)
+    @test !zip_isexecutablefile(r, 1)
+
+    @test !zip_isdir(r, 2)
+    @test !zip_isexecutablefile(r, 2)
+
+    @test !zip_isdir(r, 3)
+    @test zip_isexecutablefile(r, 3)
+
+    @test !zip_isdir(r, 4)
+    @test zip_isexecutablefile(r, 4)
+end
