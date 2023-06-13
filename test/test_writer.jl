@@ -186,3 +186,60 @@ end
     @test_throws ArgumentError("symlinks in zipfiles are not very portable") ZipArchives.zip_symlink(w2, "this is a invalid target", "symlink_entry")
     close(w2)
 end
+
+@testset "writing to weird IO" begin
+    @testset "recursive zip writer" begin
+        # Writing to an io that isn't seekable works if only zip_writefile is used.
+        # ZipWriter is not seekable.
+        out = IOBuffer()
+        layer1 = ZipWriter(out)
+        zip_newfile(layer1, "inner.zip")
+        ZipWriter(layer1) do layer2
+            zip_newfile(layer2, "inner.txt")
+            write(layer2, "inner most text")
+            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner.txt\"") zip_commitfile(layer2)
+            @test !iswritable(layer2)
+            zip_writefile(layer2, "inner2.txt", codeunits("inner2 text"))
+            zip_newfile(layer2, "inner3.txt")
+            write(layer2, "inner3 text")
+            zip_abortfile(layer2)
+        end
+        close(layer1)
+        out_data = take!(out)
+        r1 = ZipBufferReader(out_data)
+        zip_openentry(r1, 1) do entryio
+            r2 = ZipBufferReader(read(entryio))
+            @test zip_names(r2) == ["inner2.txt"]
+            zip_openentry(r2, 1) do innerio
+                @test read(innerio, String) == "inner2 text"
+            end
+        end
+    end
+    @testset "Append only file" begin
+        filename = tempname()
+        FLAGS = Base.Filesystem.JL_O_APPEND | Base.Filesystem.JL_O_CREAT | Base.Filesystem.JL_O_WRONLY
+        PERMISSIONS = Base.Filesystem.S_IROTH | Base.Filesystem.S_IRGRP | Base.Filesystem.S_IWGRP | Base.Filesystem.S_IRUSR | Base.Filesystem.S_IWUSR
+        io = Base.Filesystem.open(filename, FLAGS, PERMISSIONS)
+        ZipWriter(io; own_io=true) do w
+            zip_newfile(w, "inner.txt")
+            write(w, "inner most text")
+            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner.txt\"") zip_commitfile(w)
+            @test !iswritable(w)
+            zip_writefile(w, "inner2.txt", codeunits("inner2 text"))
+            zip_newfile(w, "inner3.txt")
+            write(w, "inner3 text")
+            zip_abortfile(w)
+            zip_newfile(w, "inner4.txt")
+            write(w, "inner4 text")
+            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner4.txt\"") zip_commitfile(w)
+        end
+        ZipFileReader(filename) do r
+            @test zip_names(r) == ["inner2.txt"]
+            zip_openentry(r, 1) do entryio
+                @test read(entryio, String) == "inner2 text"
+            end
+        end
+
+        rm(filename)
+    end
+end
