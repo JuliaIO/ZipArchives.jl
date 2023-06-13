@@ -111,9 +111,16 @@ end
     @testset "writing without creating an entry" begin
         filename = tempname()
         w = ZipWriter(filename)
+        @test !isreadable(w)
+        @test !iswritable(w)
+        @test_throws ArgumentError("ZipWriter not writable, call zip_newfile first") position(w)
         @test_throws ArgumentError("ZipWriter not writable, call zip_newfile first") write(w, 0x00)
         zip_newfile(w, "test")
+        @test position(w) == 0
+        @test !isreadable(w)
+        @test iswritable(w)
         @test write(w, 0x00) == 1
+        @test position(w) == 1
         close(w)
         @test_throws ArgumentError("ZipWriter is closed") write(w, 0x00)
     end
@@ -150,13 +157,16 @@ end
     zip_mkdir(w, "empty_dir")
     # Adding symlinks requires check_names=false
     ZipArchives.zip_symlink(w, "this is a invalid target", "symlink_entry")
+    # marking entry as executable.
     zip_writefile(w, "script.sh", codeunits("#!/bin/sh\nls\n"); executable=true)
     zip_newfile(w, "script2.sh"; executable=true)
     println(w, "#!/bin/sh")
     println(w, "echo 'hi'")
+    zip_newfile(w, "weird thing"; executable=true, external_attrs=UInt32(0))
     close(w)
-    r = ZipBufferReader(take!(io))
-    @test zip_names(r) == ["empty_dir/", "symlink_entry", "script.sh", "script2.sh"]
+    seekstart(io)
+    r = ZipBufferReader(read(io))
+    @test zip_names(r) == ["empty_dir/", "symlink_entry", "script.sh", "script2.sh", "weird thing"]
     @test zip_isdir(r, 1)
     @test !zip_isexecutablefile(r, 1)
 
@@ -168,4 +178,11 @@ end
 
     @test !zip_isdir(r, 4)
     @test zip_isexecutablefile(r, 4)
+
+    @test !zip_isdir(r, 5)
+    @test !zip_isexecutablefile(r, 5)
+
+    w2 = zip_append_archive(io; zip_kwargs=(;check_names=true))
+    @test_throws ArgumentError("symlinks in zipfiles are not very portable") ZipArchives.zip_symlink(w2, "this is a invalid target", "symlink_entry")
+    close(w2)
 end

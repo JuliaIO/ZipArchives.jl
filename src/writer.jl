@@ -99,7 +99,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         else
             seekend(io)
         end
-        w = ZipWriter(io, zip_kwargs...)
+        w = ZipWriter(io; zip_kwargs...)
         w.entries = entries
         w.central_dir_buffer = central_dir_buffer
         if w.check_names
@@ -164,7 +164,7 @@ For `Deflate` defaults to -1 and can be -1 or 0 to 9.
 0 is no compression, and -1 is a good compromise between speed and file size.
 - `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
 Defaults to false.
-- `external_attr::Union{Nothing,UInt32}=nothing`: Manually set the 
+- `external_attrs::Union{Nothing,UInt32}=nothing`: Manually set the 
 external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
 """
 function zip_newfile(w::ZipWriter, name::AbstractString; 
@@ -425,7 +425,7 @@ This is not supported by most zip extractors.
 """
 function zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
     if w.check_names
-        throw(ArgumentError("symlinks in zipfiles are not very portable."))
+        throw(ArgumentError("symlinks in zipfiles are not very portable"))
     end
     targetstr = String(target)
     namestr = String(link)

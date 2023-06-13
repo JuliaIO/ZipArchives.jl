@@ -16,15 +16,25 @@ using Test
         @test zip_names(w3) == ["testfile1.txt", "testfile2.txt"]
         zip_writefile(w3, "testfile3.txt", codeunits("the is a file in the 3 part"))
     end
-    data = take!(io)
+    # now with a file
+    filename = tempname()
+    seekstart(io)
+    write(filename, io)
+    zip_append_archive(filename) do w4
+        @test zip_names(w4) == ["testfile1.txt", "testfile2.txt", "testfile3.txt"]
+        zip_writefile(w4, "testfile4.txt", codeunits("the is a file in the 4 part"))
+    end
+
+    data = read(filename)
     r = ZipBufferReader(data)
-    @test zip_names(r) == ["testfile1.txt", "testfile2.txt", "testfile3.txt"]
-    for i in 1:3
+    @test zip_names(r) == ["testfile$i.txt" for i in 1:4]
+    for i in 1:4
         zip_test_entry(r, i)
         zip_openentry(r, i) do file
             @test read(file, String) == "the is a file in the $i part"
         end
     end
+    rm(filename)
 end
 
 @testset "zip_append_archive no trunc" begin
