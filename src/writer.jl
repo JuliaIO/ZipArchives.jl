@@ -95,9 +95,6 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
         if trunc_footer
             truncate(io, central_dir_offset)
-            seekend(io)
-        else
-            seekend(io)
         end
         w = ZipWriter(io; zip_kwargs...)
         w.entries = entries
@@ -273,6 +270,9 @@ function Base.position(w::ZipWriter)::Int64
     w.partial_entry.uncompressed_size
 end
 
+function Base.seekend(w::ZipWriter)::ZipWriter
+    return w
+end
 
 
 """
@@ -294,19 +294,22 @@ function zip_commitfile(w::ZipWriter)
             # Prevent memory leak maybe.
             TranscodingStreams.finalize(pe.transcoder.codec)
         end
-
-        pe.compressed_size = position(w._io) - pe.offset - pe.local_header_size
+        cur_offset = position(w._io)
+        pe.compressed_size = cur_offset - pe.offset - pe.local_header_size
 
         # note, make sure never to change the except for these three things.
         if !all(iszero, (pe.uncompressed_size, pe.compressed_size, pe.crc32))
             # Must go back and update the local header if any data was written.
-            cur_offset = position(w._io)
+            # TODO add better error message about requiring seekable IO if this fails
             try
-                # TODO add better error message about requiring seekable IO if this fails
                 seek(w._io, pe.offset)
                 write_local_header(w._io, pe)
+                after_write_offset = position(w._io)
+                @argcheck after_write_offset == pe.offset + pe.local_header_size
+            catch
+                error("failed to rewrite old local header, aborting entry $(repr(pe.name))")
             finally
-                seek(w._io, cur_offset)
+                seekend(w._io)
             end
         end
         entry = append_entry!(w.central_dir_buffer, pe)
