@@ -1,4 +1,5 @@
 [deps]
+CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
 LibArchive_jll = "1e303b3e-d4db-56ce-88c4-91e52606a1a8"
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
 PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"

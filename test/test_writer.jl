@@ -1,4 +1,5 @@
 using ZipArchives
+using CodecZlib
 using Test
 
 Debug = false
@@ -240,6 +241,31 @@ end
             end
         end
 
+        rm(filename)
+    end
+    @testset "GzipCompressorStream" begin
+        filename = tempname()
+        ZipWriter(GzipCompressorStream(open(filename; write=true)); own_io=true) do w
+            zip_newfile(w, "inner.txt")
+            write(w, "inner most text")
+            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner.txt\"") zip_commitfile(w)
+            @test !iswritable(w)
+            zip_writefile(w, "inner2.txt", codeunits("inner2 text"))
+            zip_newfile(w, "inner3.txt")
+            write(w, "inner3 text")
+            zip_abortfile(w)
+            zip_newfile(w, "inner4.txt")
+            write(w, "inner4 text")
+            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner4.txt\"") zip_commitfile(w)
+        end
+        file = GzipDecompressorStream(open(filename))
+        out_data = read(file)
+        close(file)
+        r = ZipBufferReader(out_data)
+        @test zip_names(r) == ["inner2.txt"]
+        zip_openentry(r, 1) do entryio
+            @test read(entryio, String) == "inner2 text"
+        end
         rm(filename)
     end
 end
