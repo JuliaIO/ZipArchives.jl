@@ -371,10 +371,12 @@ function parse_central_directory(io::IO)
     end
     # Maybe num_entries was too small: See https://github.com/thejoshwolfe/yauzl/issues/60
     # In that case just log a warning
-    if readle(io_b, UInt32) == 0x02014b50
-        @warn "There may be some entries that are being ignored"
+    if bytesavailable(io_b) ≥ 4
+        if readle(io_b, UInt32) == 0x02014b50
+            @warn "There may be some entries that are being ignored"
+        end
+        skip(io_b, -4)
     end
-    skip(io_b, -4)
 
     resize!(central_dir_buffer, position(io_b))
 

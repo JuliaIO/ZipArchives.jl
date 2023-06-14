@@ -99,7 +99,6 @@ mutable struct ZipWriter <: IO
             own_io::Bool=false,
             force_zip64::Bool=false,
         )
-        seekend(io)
         new(
             io,
             own_io,

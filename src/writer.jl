@@ -96,6 +96,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         if trunc_footer
             truncate(io, central_dir_offset)
         end
+        seekend(io)
         w = ZipWriter(io; zip_kwargs...)
         w.entries = entries
         w.central_dir_buffer = central_dir_buffer
@@ -181,11 +182,10 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     end
     @assert !iswritable(w)
     io = w._io
-    offset = position(io)
     pe = PartialEntry(;
         name=namestr,
         w.force_zip64,
-        offset,
+        offset=0, # place holder offset
     )
 
     if !isnothing(executable) && executable
@@ -211,10 +211,13 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
         throw(ArgumentError("compression_method must be Deflate or Store"))
     end
     pe.bit_flags |= level_bits
-    pe.transcoder = TranscodingStream(codec, io)
+    pe.transcoder = TranscodingStream(codec, io; sharedbuf=false)
     pe.method = compression_method
     
     write_local_header(io, pe)
+    # sometimes position before a write is the read position.
+    # That is why I am getting the offset after the write.
+    pe.offset = position(io) - pe.local_header_size
     w.partial_entry = pe
     @assert iswritable(w)
     nothing
@@ -270,11 +273,6 @@ function Base.position(w::ZipWriter)::Int64
     w.partial_entry.uncompressed_size
 end
 
-function Base.seekend(w::ZipWriter)::ZipWriter
-    return w
-end
-
-
 """
     zip_commitfile(w::ZipWriter)
 Close any open entry making `w` not writable.
@@ -305,11 +303,13 @@ function zip_commitfile(w::ZipWriter)
                 seek(w._io, pe.offset)
                 write_local_header(w._io, pe)
                 after_write_offset = position(w._io)
+                cur_offset = max(cur_offset, after_write_offset)
+                # sometimes seek changes the read position
+                # but the write position is forced to the end on the next write.
+                # that is what the max is here to handle.
                 @argcheck after_write_offset == pe.offset + pe.local_header_size
-            catch
-                error("failed to rewrite old local header, aborting entry $(repr(pe.name))")
             finally
-                seekend(w._io)
+                seek(w._io, cur_offset)
             end
         end
         entry = append_entry!(w.central_dir_buffer, pe)
@@ -372,11 +372,10 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     end
     @assert !iswritable(w)
     io = w._io
-    offset = position(io)
     crc32 = zip_crc32(data)
     pe = PartialEntry(;
         name=namestr,
-        offset,
+        offset=0,# place holder offset
         w.force_zip64,
         compressed_size=length(data),
         uncompressed_size=length(data),
@@ -390,6 +389,9 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
         pe.external_attrs = external_attrs
     end
     write_local_header(io, pe)
+    # sometimes position before a write is the read position.
+    # That is why I am getting the offset after the write.
+    pe.offset = position(io) - pe.local_header_size
     write(io, data) == length(data) || error("short write")
     @assert !iswritable(w)
     entry = append_entry!(w.central_dir_buffer, pe)
@@ -616,10 +618,11 @@ function write_footer(
         central_dir_buffer::Vector{UInt8};
         force_zip64::Bool=false
     )
-    start_of_central_dir = position(io)
     size_of_central_dir = write(io, central_dir_buffer)
-    end_of_central_dir = position(io)
     size_of_central_dir == length(central_dir_buffer) || error("short write")
+    end_of_central_dir = position(io)
+    @assert end_of_central_dir ≥ size_of_central_dir
+    start_of_central_dir = end_of_central_dir - size_of_central_dir
     number_of_entries = length(entries)
     use_eocd64 = (
         force_zip64                           ||
@@ -664,5 +667,7 @@ function write_footer(
     @assert p == length(b)+1
     n = write(io, b)
     n == p-1 || error("short write")
+    after_write_offset = position(io)
+    @argcheck after_write_offset == tailsize + end_of_central_dir
     tailsize + size_of_central_dir
 end

@@ -198,7 +198,7 @@ end
         ZipWriter(layer1) do layer2
             zip_newfile(layer2, "inner.txt")
             write(layer2, "inner most text")
-            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner.txt\"") zip_commitfile(layer2)
+            @test_throws MethodError zip_commitfile(layer2)
             @test !iswritable(layer2)
             zip_writefile(layer2, "inner2.txt", codeunits("inner2 text"))
             zip_newfile(layer2, "inner3.txt")
@@ -224,7 +224,7 @@ end
         ZipWriter(io; own_io=true) do w
             zip_newfile(w, "inner.txt")
             write(w, "inner most text")
-            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner.txt\"") zip_commitfile(w)
+            @test_throws ArgumentError zip_commitfile(w)
             @test !iswritable(w)
             zip_writefile(w, "inner2.txt", codeunits("inner2 text"))
             zip_newfile(w, "inner3.txt")
@@ -232,13 +232,19 @@ end
             zip_abortfile(w)
             zip_newfile(w, "inner4.txt")
             write(w, "inner4 text")
-            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner4.txt\"") zip_commitfile(w)
+            @test_throws ArgumentError zip_commitfile(w)
         end
         ZipFileReader(filename) do r
             @test zip_names(r) == ["inner2.txt"]
             zip_openentry(r, 1) do entryio
                 @test read(entryio, String) == "inner2 text"
             end
+        end
+
+        # To avoid this call seekend before creating the zipwriter
+        # if using Base.Filesystem.open with JL_O_APPEND
+        io = Base.Filesystem.open(filename, FLAGS, PERMISSIONS)
+        @test_throws ArgumentError ZipWriter(io; own_io=true) do w
         end
 
         rm(filename)
@@ -248,7 +254,7 @@ end
         ZipWriter(GzipCompressorStream(open(filename; write=true)); own_io=true) do w
             zip_newfile(w, "inner.txt")
             write(w, "inner most text")
-            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner.txt\"") zip_commitfile(w)
+            @test_throws Exception zip_commitfile(w)
             @test !iswritable(w)
             zip_writefile(w, "inner2.txt", codeunits("inner2 text"))
             zip_newfile(w, "inner3.txt")
@@ -256,7 +262,7 @@ end
             zip_abortfile(w)
             zip_newfile(w, "inner4.txt")
             write(w, "inner4 text")
-            @test_throws ErrorException("failed to rewrite old local header, aborting entry \"inner4.txt\"") zip_commitfile(w)
+            @test_throws Exception zip_commitfile(w)
         end
         file = GzipDecompressorStream(open(filename))
         out_data = read(file)
