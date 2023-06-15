@@ -99,6 +99,16 @@ function zip_test_entry(r::ZipReader, i)::Nothing
     nothing
 end
 
+"""
+    zip_readentry(r, i, args...; kwargs...)
+
+Read the contents of entry `i` in `r`. 
+
+`args...; kwargs...` are passed on to `read`
+after the entry `i` in zip reader `r` is opened.
+"""
+zip_readentry(r::ZipReader, i, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...),r, i)
+
 
 
 
@@ -264,6 +274,8 @@ function parse_central_directory(io::IO)
     io_b = IOBuffer(central_dir_buffer)
     seekstart(io_b)
     # parse central directory headers
+    # If num_entries is crazy high, avoid allocating crazy amount of memory
+    @argcheck num_entries ≤ length(central_dir_buffer)>>5
     entries = Vector{EntryInfo}(undef, num_entries)
     for i in 1:num_entries
         # central file header signature

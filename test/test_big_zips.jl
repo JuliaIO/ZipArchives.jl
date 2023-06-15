@@ -1,5 +1,6 @@
-using ZipArchives
 using Test
+using Random
+using ZipArchives
 
 @testset "$N many entries" for N in [0, 1, 2^16-1, 2^16,]
     filename = tempname()

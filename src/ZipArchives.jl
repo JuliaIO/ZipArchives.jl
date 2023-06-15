@@ -24,6 +24,7 @@ export zip_isexecutablefile
 
 export zip_test_entry
 export zip_openentry
+export zip_readentry
 
 include("writer.jl")
 export ZipWriter

@@ -1,6 +1,7 @@
 using ArgCheck
 
 function basic_name_check(name::String)
+    @argcheck !isempty(name)
     @argcheck isvalid(name)
     @argcheck !startswith(name, "/")
     @argcheck !contains(name, '\0')

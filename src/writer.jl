@@ -624,6 +624,7 @@ function write_footer(
     @assert end_of_central_dir ≥ size_of_central_dir
     start_of_central_dir = end_of_central_dir - size_of_central_dir
     number_of_entries = length(entries)
+    @argcheck number_of_entries ≤ size_of_central_dir>>5
     use_eocd64 = (
         force_zip64                           ||
         number_of_entries    > typemax(Int16) ||
