@@ -11,6 +11,7 @@ See [test/test_simple-usage.jl](test/test_simple-usage.jl) for examples.
 
 All public functions are exported, non exported functions and struct fields are internal.
 
+
 ### Terminology
 
 #### Archive
@@ -18,6 +19,15 @@ The actual `.zip` file on disk or in a buffer in memory.
 
 #### Entry
 A file or empty directory stored in an archive. 
+
+### Limitations
+
+1. Cannot directly extract all files in an archive and write those files to disk.
+1. Ignores time stamps.
+1. Cannot write an archive fully in streaming mode. See https://github.com/madler/zipflow if you need this functionality.
+1. Encryption and decryption not supported.
+1. Multi disk archives not supported.
+1. Cannot recover data from a corrupted archive. Especially if the end of the archive is corrupted.
 
 ## Related Packages
 
