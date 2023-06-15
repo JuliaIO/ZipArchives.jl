@@ -252,7 +252,7 @@ end
     @test_throws ArgumentError r = ZipBufferReader(data)
 
     for i in 1:3
-        @test_throws ArgumentError r = ZipBufferReader(read(testdata*"fake-huge-nentries$i.badzip"))
+        @test_throws ArgumentError r = ZipBufferReader(base64decode(read(testdata*"fake-huge-nentries$i.badzip.b64")))
     end
 
     # Also check that an archive containing a handful of empty
