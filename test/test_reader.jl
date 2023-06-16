@@ -1,6 +1,6 @@
 using ZipArchives
 using Test
-using PyCall
+using Base64
 using Random
 
 @testset "find_end_of_central_directory_record unit tests" begin
@@ -114,13 +114,19 @@ end
 end
 
 @testset "reading file with unknown compression method" begin
-    filename = tempname()
-    zipfile = PyCall.pyimport("zipfile")
-    PyCall.@pywith zipfile.ZipFile(filename, mode="w", compression=zipfile.ZIP_LZMA) as f begin
-        f.writestr("lzma_data", "this is the data")
-    end
-    data = read(filename)
-    r = ZipBufferReader(data)
+    # The following code was used to generate the data,
+    # but for some reason lzma doesn't work on github actions
+    # so I am copying the results here.
+
+    # using PyCall
+    # filename = tempname()
+    # zipfile = PyCall.pyimport("zipfile")
+    # PyCall.@pywith zipfile.ZipFile(filename, mode="w", compression=zipfile.ZIP_LZMA) as f begin
+    #     f.writestr("lzma_data", "this is the data")
+    # end
+    # data_b64 = base64encode(read(filename))
+    data_b64 = "UEsDBD8AAgAOAHJb0FaLksVmIgAAABAAAAAJAAAAbHptYV9kYXRhCQQFAF0AAIAAADoaCWd+rnMR0beE5IbQKkMGbV//6/YgAFBLAQI/AD8AAgAOAHJb0FaLksVmIgAAABAAAAAJAAAAAAAAAAAAAACAAQAAAABsem1hX2RhdGFQSwUGAAAAAAEAAQA3AAAASQAAAAAA"
+    r = ZipBufferReader(base64decode(data_b64))
     @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_test_entry(r, 1)
     @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_openentry(r, 1)
     @test zip_iscompressed(r, 1)
