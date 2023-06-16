@@ -107,7 +107,7 @@ Read the contents of entry `i` in `r`.
 `args...; kwargs...` are passed on to `read`
 after the entry `i` in zip reader `r` is opened.
 """
-zip_readentry(r::ZipReader, i, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...),r, i)
+zip_readentry(r::ZipReader, i, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...), r, i)
 
 
 
@@ -439,7 +439,7 @@ Throw an ArgumentError if entry cannot be extracted.
 """
 function validate_entry(entry::EntryInfo, fsize::Int64)
     if entry.method != Store && entry.method != Deflate
-        throw(ArgumentError("invalid compression method. Only Store and Deflate supported for now"))
+        throw(ArgumentError("invalid compression method: $(entry.method). Only Store and Deflate supported for now"))
     end
     # Check for unsupported bit flags
     @argcheck iszero(entry.bit_flags & 1<<0) "encrypted files not supported"

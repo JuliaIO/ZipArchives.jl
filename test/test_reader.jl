@@ -1,5 +1,6 @@
 using ZipArchives
 using Test
+using PyCall
 using Random
 
 @testset "find_end_of_central_directory_record unit tests" begin
@@ -96,4 +97,55 @@ end
     @test_logs (:warn,"There may be some entries that are being ignored") entries, central_dir_buffer, central_dir_offset = ZipArchives.parse_central_directory(io)
     @test isempty(entries)
     @test central_dir_offset == 0
+end
+
+
+@testset "reading invalid files" begin
+    testdata = joinpath(@__DIR__,"examples from go/testdata/")
+    invalid_file = testdata*"test-trailing-junk.zip"
+    filename = tempname()
+    cp(invalid_file, filename)
+    data = read(filename)
+    @test_throws ArgumentError ZipBufferReader(data)
+    @test_throws ArgumentError r = ZipFileReader(filename)
+    # ZipFileReader will close the file if it has an error while parsing.
+    # this will let the file be removed afterwards on windows.
+    rm(filename)
+end
+
+@testset "reading file with unknown compression method" begin
+    filename = tempname()
+    zipfile = PyCall.pyimport("zipfile")
+    PyCall.@pywith zipfile.ZipFile(filename, mode="w", compression=zipfile.ZIP_LZMA) as f begin
+        f.writestr("lzma_data", "this is the data")
+    end
+    data = read(filename)
+    r = ZipBufferReader(data)
+    @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_test_entry(r, 1)
+    @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_openentry(r, 1)
+    @test zip_iscompressed(r, 1)
+    @test zip_names(r) == ["lzma_data"]
+    ZipFileReader(filename) do r
+        @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_test_entry(r, 1)
+        @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_openentry(r, 1)
+        @test zip_iscompressed(r, 1)
+        @test zip_names(r) == ["lzma_data"]
+    end
+    rm(filename)
+end
+
+@testset "reading file with zip64 disk number" begin
+    invalid_data1 = b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file dataPK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0 \0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x18\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0R\0\0\0\0\0\0\0?\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\x91\0\0\0\0\0\0\0\x01\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0?\0\0\0\0\0"
+    invalid_data2 = b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file dataPK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0 \0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x18\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x01\0\0\0PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0R\0\0\0\0\0\0\0?\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\x91\0\0\0\0\0\0\0\x01\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0?\0\0\0\0\0"
+    disk_num_ffff = b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file dataPK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x1c\0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x18\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0N\0\0\0\0\0\0\0?\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\x8d\0\0\0\0\0\0\0\x01\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0N\0\0\0?\0\0\0\0\0"
+    disk_num_1 = b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file dataPK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0 \0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x1c\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x01\0\0\0PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0R\0\0\0\0\0\0\0?\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\x91\0\0\0\0\0\0\0\x01\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0?\0\0\0\0\0"
+    disk_num_0 = b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file dataPK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0 \0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x1c\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0R\0\0\0\0\0\0\0?\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\x91\0\0\0\0\0\0\0\x01\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0?\0\0\0\0\0"
+    @test_throws ArgumentError ZipBufferReader(invalid_data1)
+    @test_throws ArgumentError ZipBufferReader(invalid_data2)
+    @test_throws ArgumentError ZipBufferReader(disk_num_ffff)
+    @test_throws ArgumentError ZipBufferReader(disk_num_1)
+    r = ZipBufferReader(disk_num_0)
+    @test zip_names(r) == ["test"]
+    zip_test_entry(r, 1)
+    @test zip_readentry(r, 1, String) == "file data"
 end
