@@ -158,3 +158,54 @@ end
     zip_test_entry(r, 1)
     @test zip_readentry(r, 1, String) == "file data"
 end
+
+@testset "opening entry after closed" begin
+    testdata = joinpath(@__DIR__,"examples from go/testdata/")
+    ref_file = testdata*"zip64.zip"
+    filename = tempname()
+    cp(ref_file, filename)
+    r = ZipFileReader(filename)
+    io1 = zip_openentry(r, 1)
+    close(r)
+    # data can still be read after `r` is closed
+    @test read(io1, String) == "This small file is in ZIP64 format.\n"
+    @test eof(io1)
+    @test_throws EOFError read(io1, Int)
+    # but new entries cannot be opened.
+    @test_throws ArgumentError("ZipFileReader is closed") io2 = zip_openentry(r, 1)
+    # make sure to close all open entry readers and the ZipFileReader
+    close(io1)
+    @test_throws Exception read(io1, String)
+    rm(filename)
+end
+
+@testset "seeking uncompressed entry" begin
+    # Uncompressed entries should be seekable.
+    filename = tempname()
+    ZipWriter(filename) do w
+        zip_writefile(w, "test.txt", b"This small file is in STORE format.\n")
+    end
+
+    r = ZipFileReader(filename)
+    io = zip_openentry(r, 1)
+    close(r)
+    @test !zip_iscompressed(r, 1)
+    @test position(io) == 0
+    @test read(io, String) == "This small file is in STORE format.\n"
+    @test position(io) == 36
+    @test read(io, String) == ""
+    seek(io, 5)
+    @test position(io) == 5
+    @test read(io, String) == "small file is in STORE format.\n"
+    @test position(io) == 36
+    seekstart(io)
+    @test position(io) == 0
+    @test read(io, String) == "This small file is in STORE format.\n"
+    seekstart(io)
+    seekend(io)
+    @test position(io) == 36
+    @test eof(io)
+    @test read(io, String) == ""
+    close(io)
+    rm(filename)
+end

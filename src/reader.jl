@@ -654,6 +654,7 @@ function zip_openentry(r::ZipBufferReader, i::Integer)
     elseif method == Deflate
         return DeflateDecompressorStream(base_io)
     else
-        error("unknown compression method $method. Only Deflate and Store are supported.")
+        # validate_entry should throw and ArgumentError before this
+        error("unreachable") 
     end
 end

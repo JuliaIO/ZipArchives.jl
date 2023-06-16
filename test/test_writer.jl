@@ -30,6 +30,16 @@ ZipWriter(joinpath(tmp, "compressedfiles.zip")) do w
     zip_newfile(w, "empty.txt"; compression_method=ZipArchives.Deflate, compression_level=9)
 end
 
+ZipWriter(joinpath(tmp, "different_compressed_levels.zip")) do w
+    zip_newfile(w, "default_level.txt"; compression_method=ZipArchives.Deflate)
+    write(w, "I am compressed data inside default in the zip file")
+    for level in -1:9
+        zip_newfile(w, "level_$(level).txt"; compression_method=ZipArchives.Deflate, compression_level=level)
+        write(w, "I am compressed data inside level_$(level).txt in the zip file")
+    end
+    zip_newfile(w, "empty.txt"; compression_method=ZipArchives.Deflate, compression_level=9)
+end
+
 ZipWriter(joinpath(tmp, "twofiles.zip")) do w
     zip_newfile(w, "test1.txt")
     write(w, "I am data inside test1.txt in the zip file")
