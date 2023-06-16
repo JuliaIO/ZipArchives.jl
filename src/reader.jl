@@ -396,18 +396,29 @@ function parse_central_directory(io::IO)
 end
 
 function ZipFileReader(filename::AbstractString)
+    io_lock = ReentrantLock()
+    # I'm not sure if the lock is needed in the constructor.
     io = open(filename; lock=false)
     try # parse entries
-        entries, central_dir_buffer, central_dir_offset  = parse_central_directory(io)
+        entries, central_dir_buffer, central_dir_offset = lock(io_lock) do
+            parse_central_directory(io)
+        end
+        _ref_counter = Ref(1)
+        _open = Ref(true)
+        fsize = lock(io_lock) do
+            _ref_counter[] = 1
+            _open[] = true
+            filesize(io)
+        end
         ZipFileReader(
             entries,
             central_dir_buffer,
             central_dir_offset,
             io,
-            Ref(1),
-            Ref(true),
-            ReentrantLock(),
-            filesize(io),
+            _ref_counter,
+            _open,
+            io_lock,
+            fsize,
             filename,
         )
     catch # close io if there is an error parsing entries
