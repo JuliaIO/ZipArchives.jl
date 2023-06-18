@@ -5,7 +5,8 @@ using Test
 import ZipFile
 import p7zip_jll
 import LibArchive_jll
-import PyCall
+# ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
+import PythonCall
 
 
 
@@ -37,9 +38,10 @@ Extract the zip file at zippath into the directory dirpath
 Use zipfile.py from python standard library
 """
 function unzip_python(zippath, dirpath)
-    zipfile = PyCall.pyimport("zipfile")
-    PyCall.@pywith zipfile.ZipFile(zippath) as f begin
-        isnothing(f.testzip()) || error(string(f.testzip()))
+    zipfile = PythonCall.pyimport("zipfile")
+    PythonCall.pywith(zipfile.ZipFile(zippath)) do f
+        test_result = PythonCall.pyconvert(Union{String, Nothing}, f.testzip())
+        isnothing(test_result) || error(test_result)
         f.extractall(dirpath)
     end
     nothing

@@ -40,6 +40,9 @@ jobs:
             ${{ runner.os }}-test-${{ env.cache-name }}-
             ${{ runner.os }}-test-
             ${{ runner.os }}-
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11' 
       - name: Develop packages
         run: |
           julia --project=test -e '
