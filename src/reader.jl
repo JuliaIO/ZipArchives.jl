@@ -7,6 +7,11 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
+"""
+    zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
+
+Return the standard zip CRC32 checksum of data
+"""
 function zip_crc32(data::Base.ByteArray, crc::UInt32=UInt32(0))::UInt32
     GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), crc)
 end
@@ -235,7 +240,7 @@ function parse_central_directory(io::IO)
             # version needed to extract
             # This is set to 62 if version 2 of ZIP64 is used
             # This is not supported yet.
-            local version_needed = readle(io, UInt16)
+            local version_needed = readle(io, UInt16) & 0x00FF
             @argcheck version_needed < 62
             # number of this disk
             @argcheck readle(io, UInt32) == 0
@@ -282,7 +287,7 @@ function parse_central_directory(io::IO)
         @argcheck readle(io_b, UInt32) == 0x02014b50
         local version_made = readle(io_b, UInt8)
         local os = readle(io_b, UInt8)
-        local version_needed = readle(io_b, UInt16)
+        local version_needed = readle(io_b, UInt16) & 0x00FF
         local bit_flags = readle(io_b, UInt16)
         local method = readle(io_b, UInt16)
         local dos_time = readle(io_b, UInt16)

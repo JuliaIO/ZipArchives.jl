@@ -537,7 +537,7 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
     else
         0
     end
-    version_made = UInt8(63)
+    version_made = UInt8(45) # made by v4.5 equivalent
     os = UNIX
 
     old_len_b::Int = length(b)
@@ -640,7 +640,7 @@ function write_footer(
     if use_eocd64
         p += write_buffer(b, p, 0x06064b50) # zip64 end of central dir signature
         p += write_buffer(b, p, UInt64(56-12)) # size of zip64 end of central directory record
-        p += write_buffer(b, p, UInt8(63)) # version made by zip 6.3
+        p += write_buffer(b, p, UInt8(45)) # version made by, zip v4.5 equivalent
         p += write_buffer(b, p, UNIX) # version made by OS
         p += write_buffer(b, p, UInt16(45)) # version needed to extract
         p += write_buffer(b, p, UInt32(0)) # number of this disk
