@@ -28,6 +28,12 @@ Small zip file created with windows 11 7Zip 22.01
 ## `win11-julia-p7zip.zip`
 Small zip file created with windows 11 p7zip_jll 17.4.0+0
 
+## `win11-powerpoint.odp`
+Small odp file created on windows 11 in microsoft PowerPoint version 2305
+
+## `win11-powerpoint.pptx`
+Small pptx file created on windows 11 in microsoft PowerPoint version 2305
+
 ## `ZipArchives.jl-main.zip`
 Zip file downloaded from a github on 20 JUN 2023
 
