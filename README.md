@@ -45,7 +45,7 @@ Currently ZipArchives has the following benefits over ZipFile:
 2. UTF-8 file name support: entry names correctly mark that they are UTF-8.
 3. Safe multi threaded reading of different entries in a single archive.
 4. Files can be marked as executable. Permissions are handled like in https://github.com/JuliaIO/Tar.jl#permissions
-5. By default when writing an achive entry names are checked to avoid some common issues if the archive would be extracted on windows.
+5. By default when writing an archive, entry names are checked to avoid some common issues if the archive would be extracted on windows.
 6. Ability to append to an existing zip archive, in an `IO` or in a file on disk.
 
 ZipArchives currently has the following limitations compared to ZipFile:
