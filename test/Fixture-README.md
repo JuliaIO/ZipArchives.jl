@@ -40,3 +40,14 @@ Zip file downloaded from a github on 20 JUN 2023
 ## `leftpad-core_2.13-0.1.11.jar`
 Example jar file from https://mvnrepository.com/artifact/io.github.asakaev/leftpad-core_2.13/0.1.11
 
+## `ubuntu22-files.zip`
+Created with default ubuntu files program
+
+## `ubuntu22-7zip.zip
+Created with 7zip version 22.01 (x64)
+
+## `ubuntu22-old7zip.zip
+Created with 7zip version 16.02 p7zip 16.02
+
+## `ubuntu22-infozip.zip`
+Small zip file created with ubuntu22 Info-ZIP Zip 3.0
