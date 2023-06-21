@@ -80,9 +80,6 @@ open(joinpath(tmp, "4files64.zip"); write=true) do io
     end
 end
 
-# This defines a vector of functions in `unzippers`
-# These functions take a zipfile path and a directory path
-# They extract the zipfile into the directory
 include("external_unzippers.jl") 
 
 @testset "Writer compat with $(unzipper)" for unzipper in unzippers

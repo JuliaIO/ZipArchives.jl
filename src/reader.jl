@@ -287,6 +287,7 @@ function parse_central_directory(io::IO)
         @argcheck readle(io_b, UInt32) == 0x02014b50
         local version_made = readle(io_b, UInt8)
         local os = readle(io_b, UInt8)
+        # An old version of 7zip added the OS byte to version needed. So ignore the top byte here. https://sourceforge.net/p/sevenzip/bugs/1019/
         local version_needed = readle(io_b, UInt16) & 0x00FF
         local bit_flags = readle(io_b, UInt16)
         local method = readle(io_b, UInt16)

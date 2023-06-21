@@ -1,7 +1,9 @@
 using ZipArchives
+using Pkg.Artifacts
 using Test
 using Base64
 using Random
+import p7zip_jll
 
 @testset "find_end_of_central_directory_record unit tests" begin
     find_eocd = ZipArchives.find_end_of_central_directory_record
@@ -208,4 +210,54 @@ end
     @test read(io, String) == ""
     close(io)
     rm(filename)
+end
+
+@testset "reading fixture" begin
+    ensure_artifact_installed("fixture", joinpath(@__DIR__,"Artifacts.toml"))
+    fixture_path = joinpath(artifact"fixture", "fixture")# joinpath(@__DIR__,"fixture/")
+    for file in readdir(fixture_path; join=true)
+        mktempdir() do tmpout
+            data = read(file)
+            r = ZipBufferReader(data)
+            p7zip_jll.p7zip() do exe
+                run(pipeline(`$(exe) x -y -o$(tmpout) $(file)`, devnull))
+            end
+            for i in 1:zip_nentries(r)
+                zip_test_entry(r, i)
+                name = zip_name(r, i)
+                if zip_isdir(r, i)
+                    @test isdir(joinpath(tmpout,name))
+                else
+                    entry_data = zip_readentry(r, i)
+                    @test read(joinpath(tmpout,name)) == entry_data
+                end
+            end
+        end
+    end
+end
+
+function rewrite_zip(old::AbstractString, new::AbstractString)
+    ZipFileReader(old) do r
+        ZipWriter(new) do w
+            for i in 1:zip_nentries(r)
+                name = zip_name(r, i)
+                zip_test_entry(r, i)
+                if zip_isdir(r, i)
+                    zip_mkdir(w, name)
+                    continue
+                end
+                isexe = zip_isexecutablefile(r, i)
+                comp = if zip_iscompressed(r, i)
+                    ZipArchives.Deflate
+                else
+                    ZipArchives.Store
+                end
+                zip_newfile(w, name; executable=isexe, compression_method= comp)
+                zip_openentry(r, i) do io
+                    write(w, io)
+                end
+                zip_commitfile(w)
+            end
+        end
+    end
 end
