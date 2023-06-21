@@ -1,5 +1,7 @@
 module ZipArchives
 
+using PrecompileTools
+
 include("constants.jl")
 include("filename-checks.jl")
 
@@ -36,5 +38,30 @@ export zip_abortfile
 export zip_mkdir
 
 # include("high-level.jl")
+
+@setup_workload begin
+    # Putting some things in `@setup_workload` instead of `@compile_workload` can reduce the size of the
+    # precompile file and potentially make loading faster.
+    data1 = [0x01,0x04,0x08]
+    data2 = codeunits("data2")
+    @compile_workload begin
+        # all calls in this block will be precompiled, regardless of whether
+        # they belong to your package or not (on Julia 1.8 and higher)
+        io = IOBuffer()
+        ZipWriter(io) do w
+            zip_writefile(w, "test1", data1)
+            zip_writefile(w, "test2", data2)
+        end
+        mktemp() do path, fileio
+            ZipWriter(fileio) do w
+                zip_writefile(w, "test1", data1)
+                zip_writefile(w, "test2", data2)
+            end
+        end
+        zipdata = take!(io)
+        r = ZipBufferReader(zipdata)
+        zip_readentry(r, 1)
+    end
+end
 
 end

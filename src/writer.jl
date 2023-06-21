@@ -4,7 +4,7 @@ using TranscodingStreams
 
 
 """
-    mutable struct ZipWriter <: IO
+    mutable struct ZipWriter{S<:IO} <: IO
     ZipWriter(io::IO; zip_kwargs...)
     ZipWriter(f::Function, io::IO; zip_kwargs...)
 
@@ -182,7 +182,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     end
     @assert !iswritable(w)
     io = w._io
-    pe = PartialEntry(;
+    pe = PartialEntry{typeof(io)}(;
         name=namestr,
         w.force_zip64,
         offset=0, # place holder offset
@@ -235,11 +235,18 @@ function write_buffer(b::Vector{UInt8}, p::Int, x::Integer)::Int
     sizeof(x)
 end
 function write_buffer(b::Vector{UInt8}, p::Int, x::AbstractVector{UInt8})::Int
-    b[p:p+length(x)-1] .= x
+    copyto!(b, p, x, firstindex(x), length(x))
+    # b[p:p+length(x)-1] .= x
     length(x)
 end
 function write_buffer(b::Vector{UInt8}, p::Int, x::String)::Int
-    write_buffer(b, p, codeunits(x))
+    nb = ncodeunits(x)
+    data = codeunits(x)
+    for i in eachindex(data)
+        b[p+i-1] = data[i]
+    end
+    nb
+    # write_buffer(b, p, codeunits(x))
 end
 
 
@@ -260,8 +267,8 @@ function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::Int
     iszero(n) && return 0
     (n > typemax(Int)) && throw(ArgumentError("too many bytes. Tried to write $n bytes"))
     assert_writeable(w)
-    pe::PartialEntry = w.partial_entry
-    nb::UInt = unsafe_write(pe.transcoder, p, n)
+    pe = something(w.partial_entry)
+    nb::UInt = unsafe_write(something(pe.transcoder), p, n)
     pe.crc32 = unsafe_crc32(p, nb, pe.crc32)
     pe.uncompressed_size += nb
     # pe.entry.compressed_size is updated in zip_commitfile
@@ -281,16 +288,17 @@ then rethrow the error.
 """
 function zip_commitfile(w::ZipWriter)
     if iswritable(w)
-        pe::PartialEntry = w.partial_entry
+        pe = something(w.partial_entry)
+        transcoder = something(pe.transcoder)
         w.partial_entry = nothing
         # If some error happens, the file will be partially written,
         # but not included in the central directory.
         # Finish the compressing here, but don't close underlying IO.
         try
-            write(pe.transcoder, TranscodingStreams.TOKEN_END)
+            write(transcoder, TranscodingStreams.TOKEN_END)
         finally
             # Prevent memory leak maybe.
-            TranscodingStreams.finalize(pe.transcoder.codec)
+            TranscodingStreams.finalize(transcoder.codec)
         end
         cur_offset = position(w._io)
         pe.compressed_size = cur_offset - pe.offset - pe.local_header_size
@@ -330,14 +338,15 @@ so will be ignored when the zip archive is read.
 """
 function zip_abortfile(w::ZipWriter)
     if iswritable(w)
-        pe::PartialEntry = w.partial_entry
+        pe = something(w.partial_entry)
+        transcoder = something(pe.transcoder)
         w.partial_entry = nothing
         # Finish the compressing here, but don't close underlying IO.
         try
-            write(pe.transcoder, TranscodingStreams.TOKEN_END)
+            write(transcoder, TranscodingStreams.TOKEN_END)
         finally
             # Prevent memory leak maybe.
-            TranscodingStreams.finalize(pe.transcoder.codec)
+            TranscodingStreams.finalize(transcoder.codec)
         end
     end
     nothing
@@ -373,7 +382,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     @assert !iswritable(w)
     io = w._io
     crc32 = zip_crc32(data)
-    pe = PartialEntry(;
+    pe = PartialEntry{typeof(io)}(;
         name=namestr,
         offset=0,# place holder offset
         w.force_zip64,

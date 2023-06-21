@@ -252,6 +252,7 @@ function rewrite_zip(old::AbstractString, new::AbstractString)
                 else
                     ZipArchives.Store
                 end
+                # zip_writefile(w, name, zip_readentry(r, i); executable=isexe)
                 zip_newfile(w, name; executable=isexe, compression_method= comp)
                 zip_openentry(r, i) do io
                     write(w, io)
