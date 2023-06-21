@@ -5,8 +5,7 @@ using Test
 import ZipFile
 import p7zip_jll
 import LibArchive_jll
-# ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
-import PythonCall
+import Python_jll
 
 
 
@@ -16,9 +15,7 @@ Use p7zip
 """
 function unzip_p7zip(zippath, dirpath)
     # pipe output to devnull because p7zip is noisy
-    p7zip_jll.p7zip() do exe
-        run(pipeline(`$(exe) x -y -o$(dirpath) $(zippath)`, devnull))
-    end
+    run(pipeline(`$(p7zip_jll.p7zip()) x -y -o$(dirpath) $(zippath)`, devnull))
     nothing
 end
 
@@ -27,9 +24,7 @@ Extract the zip file at zippath into the directory dirpath
 Use bsdtar from libarchive
 """
 function unzip_bsdtar(zippath, dirpath)
-    LibArchive_jll.bsdtar() do exe
-        run(`$(exe) -x -f $(zippath) -C $(dirpath)`)
-    end
+    run(`$(LibArchive_jll.bsdtar()) -x -f $(zippath) -C $(dirpath)`)
     nothing
 end
 
@@ -38,12 +33,8 @@ Extract the zip file at zippath into the directory dirpath
 Use zipfile.py from python standard library
 """
 function unzip_python(zippath, dirpath)
-    zipfile = PythonCall.pyimport("zipfile")
-    PythonCall.pywith(zipfile.ZipFile(zippath)) do f
-        test_result = PythonCall.pyconvert(Union{String, Nothing}, f.testzip())
-        isnothing(test_result) || error(test_result)
-        f.extractall(dirpath)
-    end
+    run(pipeline(`$(Python_jll.python()) -m zipfile -t $(zippath)`, devnull))
+    run(`$(Python_jll.python()) -m zipfile -e $(zippath) $(dirpath)`)
     nothing
 end
 
