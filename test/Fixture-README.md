@@ -7,7 +7,7 @@ that should be able to be successfully read.
 Download the fixture with 
 ```julia
 using Pkg.Artifacts
-fixture_dir = joinpath(@__DIR__, "fixture")
+fixture_dir = "fixture"
 cp(joinpath(artifact"fixture","fixture"), fixture_dir)
 ```
 
@@ -15,17 +15,20 @@ Add the file to the "fixture" directory, and a description to this file.
 
 Then run
 ```julia
+# This is the url that the artifact will be available from:
+url_to_upload_to = "https://github.com/medyan-dev/ZipArchives.jl/releases/download/v0.2.1/fixture.tar.gz"
 # This is the path to the Artifacts.toml we will manipulate
-artifact_toml = joinpath(@__DIR__, "Artifacts.toml")
+artifact_toml = "Artifacts.toml"
 fixture_hash = create_artifact() do artifact_dir
     cp(fixture_dir, joinpath(artifact_dir,"fixture"))
 end
-bind_artifact!(artifact_toml, "fixture", fixture_hash; force=true)
 tar_hash = archive_artifact(fixture_hash, "fixture.tar.gz")
+bind_artifact!(artifact_toml, "fixture", fixture_hash; force=true,
+    download_info = [(url_to_upload_to, tar_hash)]
+)
 ```
 
-Finally, upload the new "fixture.tar.gz" to github and update the 
-download section of the "Artifacts.toml"
+Finally, upload the new "fixture.tar.gz" to `url_to_upload_to`
 
 ## `win11-excel.xlsx`
 Small excel file created on windows 11 in microsoft Excel version 2305.

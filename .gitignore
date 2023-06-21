@@ -6,5 +6,6 @@
 
 /test/Manifest.toml
 /Manifest.toml
+fixture.tar.gz
 .CondaPkg
 *.cov
