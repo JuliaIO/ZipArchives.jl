@@ -44,10 +44,10 @@ export zip_mkdir
     # precompile file and potentially make loading faster.
     data1 = [0x01,0x04,0x08]
     data2 = codeunits("data2")
+    io = IOBuffer()
     @compile_workload begin
         # all calls in this block will be precompiled, regardless of whether
         # they belong to your package or not (on Julia 1.8 and higher)
-        io = IOBuffer()
         ZipWriter(io) do w
             zip_writefile(w, "test1", data1)
             zip_writefile(w, "test2", data2)
