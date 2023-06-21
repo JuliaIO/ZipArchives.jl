@@ -498,7 +498,7 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     end
     offset::Int64 = entry.offset
     method = entry.method
-    @lock r._lock begin
+    Base.@lock r._lock begin
         # read and validate local header
         seek(r._io, offset)
         @argcheck readle(r._io, UInt32) == 0x04034b50
