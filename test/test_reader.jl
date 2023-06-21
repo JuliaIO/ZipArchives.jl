@@ -213,6 +213,7 @@ end
 end
 
 @testset "reading fixture" begin
+    ensure_artifact_installed("fixture", joinpath(@__DIR__,"Artifacts.toml"))
     fixture_path = joinpath(artifact"fixture", "fixture")# joinpath(@__DIR__,"fixture/")
     for file in readdir(fixture_path; join=true)
         mktempdir() do tmpout
