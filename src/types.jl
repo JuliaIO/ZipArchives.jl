@@ -4,6 +4,15 @@ using StringViews
 
 const empty_buffer = view(UInt8[],1:0)
 
+
+
+const ByteArray = Union{
+    Base.CodeUnits{UInt8, String},
+    Vector{UInt8},
+    Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
+    Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}}
+}
+
 """
 This is an internal type.
 Info about an entry in a zip file.
@@ -35,8 +44,8 @@ struct ZipFileReader
     central_dir_buffer::Vector{UInt8}
     central_dir_offset::Int64
     _io::IOStream
-    _ref_counter::Ref{Int64}
-    _open::Ref{Bool}
+    _ref_counter::Base.RefValue{Int64}
+    _open::Base.RefValue{Bool}
     _lock::ReentrantLock
     _fsize::Int64
     _name::String
@@ -55,7 +64,7 @@ mutable struct ZipFileEntryReader <: IO
     offset::Int64
     crc32::UInt32
     compressed_size::Int64
-    _open::Ref{Bool}
+    _open::Base.RefValue{Bool}
 end
 
 
@@ -67,7 +76,7 @@ struct ZipBufferReader{T<:AbstractVector{UInt8}}
 end
 
 
-Base.@kwdef mutable struct PartialEntry
+Base.@kwdef mutable struct PartialEntry{S<:IO}
     name::String
     comment::String = ""
     external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
@@ -81,15 +90,15 @@ Base.@kwdef mutable struct PartialEntry
     compressed_size::UInt64 = 0
     uncompressed_size::UInt64 = 0
     local_header_size::Int64 = 50 + ncodeunits(name)
-    transcoder::Union{Nothing, NoopStream, DeflateCompressorStream} = nothing
+    transcoder::Union{Nothing, NoopStream{S}, DeflateCompressorStream{S}} = nothing
 end
 
-mutable struct ZipWriter <: IO
-    _io::IO
+mutable struct ZipWriter{S<:IO} <: IO
+    _io::S
     _own_io::Bool
     entries::Vector{EntryInfo}
     central_dir_buffer::Vector{UInt8}
-    partial_entry::Union{Nothing, PartialEntry}
+    partial_entry::Union{Nothing, PartialEntry{S}}
     closed::Bool
     force_zip64::Bool
     used_names_lower::Set{String}
@@ -99,7 +108,7 @@ mutable struct ZipWriter <: IO
             own_io::Bool=false,
             force_zip64::Bool=false,
         )
-        new(
+        new{typeof(io)}(
             io,
             own_io,
             EntryInfo[],

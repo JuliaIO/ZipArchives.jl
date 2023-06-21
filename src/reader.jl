@@ -12,7 +12,7 @@ end
 
 Return the standard zip CRC32 checksum of data
 """
-function zip_crc32(data::Base.ByteArray, crc::UInt32=UInt32(0))::UInt32
+function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
     GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), crc)
 end
 
@@ -87,20 +87,20 @@ Otherwise, return nothing.
 This will also read the entry and check the crc32 matches.
 """
 function zip_test_entry(r::ZipReader, i)::Nothing
-    crc32::UInt32 = 0
-    uncompressed_size::UInt64 = 0
+    crc32 = Ref(UInt32(0))
+    uncompressed_size = Ref(UInt64(0))
     zip_openentry(r, i) do io
         buffer_size = 1<<12
         buffer = zeros(UInt8, buffer_size)
         GC.@preserve buffer while !eof(io)
             nb = readbytes!(io, buffer)
-            @argcheck uncompressed_size < typemax(Int64)
-            uncompressed_size += nb
-            crc32 = unsafe_crc32(pointer(buffer), UInt(nb), crc32)
+            @argcheck uncompressed_size[] < typemax(Int64)
+            uncompressed_size[] += nb
+            crc32[] = unsafe_crc32(pointer(buffer), UInt(nb), crc32[])
         end
     end
-    @argcheck uncompressed_size == zip_uncompressed_size(r, i)
-    @argcheck crc32 == zip_stored_crc32(r, i)
+    @argcheck uncompressed_size[] == zip_uncompressed_size(r, i)
+    @argcheck crc32[] == zip_stored_crc32(r, i)
     nothing
 end
 
@@ -433,8 +433,8 @@ function ZipFileReader(filename::AbstractString)
     end
 end
 
-function ZipFileReader(f::Function, filename::AbstractString; kwargs...)
-    r = ZipFileReader(filename; kwargs...)
+function ZipFileReader(f::Function, filename::AbstractString)
+    r = ZipFileReader(filename)
     try
         f(r)
     finally
@@ -498,7 +498,7 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     end
     offset::Int64 = entry.offset
     method = entry.method
-    lock(r._lock) do
+    @lock r._lock begin
         # read and validate local header
         seek(r._io, offset)
         @argcheck readle(r._io, UInt32) == 0x04034b50
@@ -536,8 +536,8 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     end
 end
 
-function zip_openentry(f::Function, r::ZipReader, args...; kwargs...)
-    io = zip_openentry(r, args...; kwargs...)
+function zip_openentry(f::Function, r::ZipReader, args...)
+    io = zip_openentry(r, args...)
     try
         f(io)
     finally
@@ -569,6 +569,14 @@ function Base.unsafe_read(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)::Nothi
         throw(EOFError())
     end
     nothing
+end
+
+function Base.read(io::ZipFileEntryReader, ::Type{UInt8})
+    error("ZipFileEntryReader does not support byte I/O")
+end
+
+function Base.unsafe_write(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)
+    throw(ArgumentError("ZipFileEntryReader not writable"))
 end
 
 Base.position(io::ZipFileEntryReader)::Int64 = io.p
