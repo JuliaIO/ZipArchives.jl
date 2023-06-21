@@ -2,6 +2,7 @@
 CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
 LibArchive_jll = "1e303b3e-d4db-56ce-88c4-91e52606a1a8"
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 StringViews = "354b36f9-a18e-4713-926e-db85100087ba"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

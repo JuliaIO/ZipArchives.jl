@@ -4,8 +4,28 @@ This directory contains a number of zip archives
 that should be able to be successfully read.
 
 ### How to add new files
+Download the fixture with 
+```julia
+using Pkg.Artifacts
+fixture_dir = joinpath(@__DIR__, "fixture")
+cp(joinpath(artifact"fixture","fixture"), fixture_dir)
+```
 
-Add the file, and a description to this file.
+Add the file to the "fixture" directory, and a description to this file.
+
+Then run
+```julia
+# This is the path to the Artifacts.toml we will manipulate
+artifact_toml = joinpath(@__DIR__, "Artifacts.toml")
+fixture_hash = create_artifact() do artifact_dir
+    cp(fixture_dir, joinpath(artifact_dir,"fixture"))
+end
+bind_artifact!(artifact_toml, "fixture", fixture_hash; force=true)
+tar_hash = archive_artifact(fixture_hash, "fixture.tar.gz")
+```
+
+Finally, upload the new "fixture.tar.gz" to github and update the 
+download section of the "Artifacts.toml"
 
 ## `win11-excel.xlsx`
 Small excel file created on windows 11 in microsoft Excel version 2305.

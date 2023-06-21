@@ -1,4 +1,5 @@
 using ZipArchives
+using Pkg.Artifacts
 using Test
 using Base64
 using Random
@@ -212,7 +213,7 @@ end
 end
 
 @testset "reading fixture" begin
-    fixture_path = joinpath(@__DIR__,"fixture/")
+    fixture_path = joinpath(artifact"fixture", "fixture")# joinpath(@__DIR__,"fixture/")
     for file in readdir(fixture_path; join=true)
         mktempdir() do tmpout
             data = read(file)
