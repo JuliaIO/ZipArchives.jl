@@ -14,6 +14,7 @@ Zlib_jll = "83775a58-1f1d-513f-b197-d71354ab007a"
 [compat]
 ArgCheck = "2"
 CodecZlib = "0.7"
+PrecompileTools = "1"
 StringViews = "1"
 TranscodingStreams = "0.9"
 julia = "1.6.0"
