@@ -5,8 +5,8 @@ using TranscodingStreams
 
 """
     mutable struct ZipWriter{S<:IO} <: IO
-    ZipWriter(io::IO; zip_kwargs...)
-    ZipWriter(f::Function, io::IO; zip_kwargs...)
+    ZipWriter(io::IO; zip_kwargs...)::ZipWriter{typeof(io)}
+    ZipWriter(f::Function, io::IO; zip_kwargs...)::ZipWriter{typeof(io)}
 
 Create a zip archive writer on `io`.
 
@@ -101,7 +101,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         w.entries = entries
         w.central_dir_buffer = central_dir_buffer
         if w.check_names
-            w.used_names_lower = Set{String}(lowercase(e.name) for e in entries)
+            w.used_names_lower = Set{String}(norm_name(e.name) for e in entries)
         end
         w
     catch # close io if there is an error parsing entries
@@ -175,15 +175,18 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     zip_commitfile(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
+    normed_name = nothing
     if w.check_names
         basic_name_check(namestr)
         @argcheck !isnothing(external_attrs) || !endswith(namestr, "/")
-        @argcheck lowercase(namestr) ∉ w.used_names_lower
+        normed_name = norm_name(namestr)
+        @argcheck normed_name ∉ w.used_names_lower
     end
     @assert !iswritable(w)
     io = w._io
     pe = PartialEntry{typeof(io)}(;
         name=namestr,
+        normed_name,
         w.force_zip64,
         offset=0, # place holder offset
     )
@@ -322,7 +325,7 @@ function zip_commitfile(w::ZipWriter)
         end
         entry = append_entry!(w.central_dir_buffer, pe)
         if w.check_names
-            push!(w.used_names_lower, lowercase(pe.name))
+            push!(w.used_names_lower, something(pe.normed_name))
         end
         push!(w.entries, entry)
     end
@@ -374,16 +377,19 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     zip_commitfile(w)
     namestr = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
+    normed_name=nothing
     if w.check_names
         basic_name_check(namestr)
         @argcheck !isnothing(external_attrs) || !endswith(namestr, "/")
-        @argcheck lowercase(namestr) ∉ w.used_names_lower
+        normed_name = norm_name(namestr)
+        @argcheck normed_name ∉ w.used_names_lower
     end
     @assert !iswritable(w)
     io = w._io
     crc32 = zip_crc32(data)
     pe = PartialEntry{typeof(io)}(;
         name=namestr,
+        normed_name,
         offset=0,# place holder offset
         w.force_zip64,
         compressed_size=length(data),
@@ -405,10 +411,29 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     @assert !iswritable(w)
     entry = append_entry!(w.central_dir_buffer, pe)
     if w.check_names
-        push!(w.used_names_lower, lowercase(namestr))
+        push!(w.used_names_lower, something(pe.normed_name))
     end
     push!(w.entries, entry)
     nothing
+end
+
+"""
+    zip_name_collision(w::ZipWriter, new_name::AbstractString)::Bool
+
+Return true if `new_name` matches an existing committed entry.
+
+The check is case insensitive, and 
+insensitive to leading, trailing, and repeated `/`.
+"""
+function zip_name_collision(w::ZipWriter, new_name::AbstractString)::Bool
+    if w.check_names
+        norm_name(new_name) ∈ w.used_names_lower
+    else
+        nname = norm_name(new_name)
+        any(w.entries) do e
+            nname == norm_name(e.name)
+        end
+    end
 end
 
 """
@@ -416,7 +441,7 @@ end
 
 Write a directory entry named `name`.
 
-`name` should end in "/". If not it will be added.
+`name` should end in "/". If not, a "/" will be appended.
 
 This is only needed to add an empty directory.
 """
@@ -431,11 +456,13 @@ function zip_mkdir(w::ZipWriter, name::AbstractString)
 end
 
 """
-zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
+    zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
 
 Creates a symbolic link to `target` with the name `link`.
 
-This is not supported by most zip extractors.
+This is not supported by most zip extractors. 
+And will error unless `check_names` is set to `false` 
+for the `ZipWriter`.
 """
 function zip_symlink(w::ZipWriter, target::AbstractString, link::AbstractString)
     if w.check_names

@@ -34,6 +34,7 @@ export ZipWriter
 export zip_append_archive
 export zip_writefile
 export zip_newfile
+export zip_name_collision
 export zip_commitfile
 export zip_abortfile
 export zip_mkdir

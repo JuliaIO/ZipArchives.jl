@@ -83,6 +83,8 @@ end
 
 Base.@kwdef mutable struct PartialEntry{S<:IO}
     name::String
+    "lowercase normalized name used to check for name collisions"
+    normed_name::Union{Nothing, String}
     comment::String = ""
     external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
     method::UInt16 = Store # compression method
