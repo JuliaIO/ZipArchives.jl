@@ -405,6 +405,46 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
     entries
 end
 
+"""
+    struct ZipFileReader
+    ZipFileReader(filename::AbstractString)
+    ZipFileReader(f::Function, filename::AbstractString)
+
+Create a reader for a zip archive in a file at path `filename`.
+
+The file must not be modified while being read.
+
+`zip_nentries(r::ZipFileReader)::Int` returns the 
+number of entries in the archive. 
+
+`zip_names(r::ZipFileReader)::Vector{String}` returns the names of all the entries in the archive.
+
+The following get information about an entry in the archive:
+
+Entries are indexed from `1:zip_nentries(r)`
+
+1. `zip_name(r::ZipFileReader, i::Integer)::String`
+1. `zip_uncompressed_size(r::ZipFileReader, i::Integer)::UInt64`
+
+`zip_test_entry(r::ZipFileReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
+
+Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` if you are worried about data corruption.
+
+`zip_openentry` and `zip_readentry` can be used to read data from an entry.
+
+To fully close the file, close all opened entries and the parent `ZipFileReader` object.
+
+This will happen automatically if the do block method is used
+for both the `ZipFileReader` constructor and `zip_openentry`
+
+After closing the returned `ZipFileReader`, any opened entries will remain opened and are still readable.
+
+# Multi threading
+
+The returned `ZipFileReader` object can safely be used from multiple threads; 
+however, the objects returned by `zip_openentry` 
+should only be accessed by one thread at a time.
+"""
 function ZipFileReader(filename::AbstractString)
     io_lock = ReentrantLock()
     # I'm not sure if the lock is needed in the constructor.
@@ -479,15 +519,16 @@ end
 
 
 """
-    zip_openentry(r::ZipFileReader, i::Integer)
+    zip_openentry(r::ZipReader, i::Integer)
+    zip_openentry(f::Function, r::ZipReader, i::Integer)
 
 Open entry `i` from `r` as a readable IO.
 
-Make sure to close this when done reading.
+Make sure to close this when done reading, 
+if not using the do block method.
 
-Multiple entries can be open and read at the same time in multiple threads.
-The stream returned by this function should not be 
-read concurrently.
+The stream returned by this function
+should only be accessed by one thread at a time.
 """
 function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     entry::EntryInfo = r.entries[i]
@@ -540,8 +581,8 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     end
 end
 
-function zip_openentry(f::Function, r::ZipReader, args...)
-    io = zip_openentry(r, args...)
+function zip_openentry(f::Function, r::ZipReader, i::Integer)
+    io = zip_openentry(r, i)
     try
         f(io)
     finally
@@ -575,10 +616,11 @@ function Base.unsafe_read(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)::Nothi
     nothing
 end
 
+# These functions were added to make JET happy
+# They should never actually get called.
 function Base.read(io::ZipFileEntryReader, ::Type{UInt8})
     error("ZipFileEntryReader does not support byte I/O")
 end
-
 function Base.unsafe_write(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)
     throw(ArgumentError("ZipFileEntryReader not writable"))
 end
@@ -632,10 +674,45 @@ function Base.close(r::ZipFileReader)::Nothing
     nothing
 end
 
-function ZipBufferReader(data::T) where T<:AbstractVector{UInt8}
-    io = IOBuffer(data)
+
+"""
+    struct ZipBufferReader{T<:AbstractVector{UInt8}}
+    ZipBufferReader(buffer::AbstractVector{UInt8})
+
+Create a reader for a zip archive in `buffer`.
+
+The array must not be modified while being read.
+
+`zip_nentries(r::ZipBufferReader)::Int` returns the 
+number of entries in the archive. 
+
+`zip_names(r::ZipBufferReader)::Vector{String}` returns the names of all the entries in the archive.
+
+The following get information about an entry in the archive:
+
+Entries are indexed from `1:zip_nentries(r)`
+
+1. `zip_name(r::ZipBufferReader, i::Integer)::String`
+1. `zip_uncompressed_size(r::ZipBufferReader, i::Integer)::UInt64`
+
+`zip_test_entry(r::ZipBufferReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
+
+Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` if you are worried about data corruption.
+
+`zip_openentry` and `zip_readentry` can be used to read data from an entry.
+
+A `ZipBufferReader` object does not need to be closed, and cannot be closed.
+
+# Multi threading
+
+The returned `ZipBufferReader` object can safely be used from multiple threads; 
+however, the objects returned by `zip_openentry` 
+should only be accessed by one thread at a time.
+"""
+function ZipBufferReader(buffer::AbstractVector{UInt8})
+    io = IOBuffer(buffer)
     entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
-    ZipBufferReader{T}(entries, central_dir_buffer, central_dir_offset, data)
+    ZipBufferReader{typeof(buffer)}(entries, central_dir_buffer, central_dir_offset, buffer)
 end
 
 function Base.show(io::IO, r::ZipBufferReader)
