@@ -1,6 +1,6 @@
 using ArgCheck
 
-function basic_name_check(name::String)
+function basic_name_check(name::String)::Nothing
     @argcheck !isempty(name)
     @argcheck isvalid(name)
     @argcheck !startswith(name, "/")
@@ -25,4 +25,15 @@ function basic_name_check(name::String)
         # From some testing on windows 11, the names seem "fine".
         # if they are written as absolute paths with a prefix of \\?\
     end
+end
+
+function norm_name(name::AbstractString)::String
+    lowercase(join(
+        split(
+            name,
+            '/';
+            keepempty=false
+        ),
+        '/'
+    ))
 end

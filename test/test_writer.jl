@@ -52,6 +52,14 @@ ZipWriter(joinpath(tmp, "utf8.zip")) do w
     write(w, "I am data inside 🐨.txt in the zip file")
     zip_newfile(w, "test2.txt")
     write(w, "I am data inside test2.txt in the zip file")
+    @test !zip_name_collision(w, "test2")
+    @test !zip_name_collision(w, "test2.txt/")
+    zip_commitfile(w)
+    @test !zip_name_collision(w, "test2")
+    @test zip_name_collision(w, "test2.txt/")
+    @test zip_name_collision(w, "test2.txt")
+    @test zip_name_collision(w, "Test2.txt")
+    @test zip_name_collision(w, "🐨.txt")
 end
 
 ZipWriter(joinpath(tmp, "3files-zip_writefile.zip")) do w
@@ -163,6 +171,12 @@ end
     io = IOBuffer()
     w = ZipWriter(io; check_names=false)
     zip_mkdir(w, "empty_dir")
+    @test zip_name_collision(w, "empty_dir")
+    @test zip_name_collision(w, "empty_dir/")
+    @test zip_name_collision(w, "empty_dir//")
+    @test zip_name_collision(w, "/empty_dir")
+    @test zip_name_collision(w, "/empty_Dir/")
+    @test !zip_name_collision(w, "foo/empty_dir")
     # Adding symlinks requires check_names=false
     ZipArchives.zip_symlink(w, "this is a invalid target", "symlink_entry")
     # marking entry as executable.
