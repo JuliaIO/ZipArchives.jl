@@ -40,25 +40,24 @@ const ZipReader = Union{ZipFileReader, ZipBufferReader}
 # Getters
 
 zip_nentries(x::HasEntries)::Int = length(x.entries)
-zip_name(x::HasEntries, i)::String = x.entries[i].name
+zip_name(x::HasEntries, i::Integer)::String = x.entries[i].name
 zip_names(x::HasEntries)::Vector{String} = String[zip_name(x,i) for i in 1:zip_nentries(x)]
-zip_uncompressed_size(x::HasEntries, i)::UInt64 = x.entries[i].uncompressed_size
-zip_compressed_size(x::HasEntries, i)::UInt64 = x.entries[i].compressed_size
-zip_iscompressed(x::HasEntries, i)::Bool = x.entries[i].method != Store
-zip_comment(x::HasEntries, i)::String = x.entries[i].comment
-zip_stored_crc32(x::HasEntries, i)::UInt32 = x.entries[i].crc32
+zip_uncompressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].uncompressed_size
+zip_compressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].compressed_size
+zip_iscompressed(x::HasEntries, i::Integer)::Bool = x.entries[i].method != Store
+zip_comment(x::HasEntries, i::Integer)::String = x.entries[i].comment
+zip_stored_crc32(x::HasEntries, i::Integer)::UInt32 = x.entries[i].crc32
 
 """
-    zip_definitely_utf8(x::HasEntries, i)::Bool
+    zip_definitely_utf8(x::HasEntries, i::Integer)::Bool
 
-Return true if the entry definitely uses utf8 encoding for the name.
+Return true if entry `i` definitely uses utf8 encoding for the name.
 
 Otherwise, the name should probably be treated as a sequence of bytes.
 
-Unlike may other zip file libraries, 
-this package will never attempt to alter saved filenames by converting to utf8.
+This package will never attempt to transcode filenames.
 """
-function zip_definitely_utf8(x::HasEntries, i)::Bool
+function zip_definitely_utf8(x::HasEntries, i::Integer)::Bool
     entry = x.entries[i]
     name::String = entry.name
     (
@@ -67,9 +66,9 @@ function zip_definitely_utf8(x::HasEntries, i)::Bool
     )
 end
 
-zip_isdir(x::HasEntries, i) = endswith(x.entries[i].name, "/")
+zip_isdir(x::HasEntries, i::Integer)::Bool = endswith(x.entries[i].name, "/")
 
-function zip_isexecutablefile(x::HasEntries, i)
+function zip_isexecutablefile(x::HasEntries, i::Integer)::Bool
     entry = x.entries[i]
     (
         entry.os == UNIX &&
@@ -79,14 +78,14 @@ function zip_isexecutablefile(x::HasEntries, i)
 end
 
 """
-    zip_test_entry(x::ZipReader, i)::Nothing
+    zip_test_entry(x::ZipReader, i::Integer)::Nothing
 
-If the entry has an issue, error.
+If entry `i` has an issue, error.
 Otherwise, return nothing.
 
 This will also read the entry and check the crc32 matches.
 """
-function zip_test_entry(r::ZipReader, i)::Nothing
+function zip_test_entry(r::ZipReader, i::Integer)::Nothing
     crc32 = Ref(UInt32(0))
     uncompressed_size = Ref(UInt64(0))
     zip_openentry(r, i) do io
@@ -105,14 +104,14 @@ function zip_test_entry(r::ZipReader, i)::Nothing
 end
 
 """
-    zip_readentry(r, i, args...; kwargs...)
+    zip_readentry(r, i::Integer, args...; kwargs...)
 
 Read the contents of entry `i` in `r`. 
 
 `args...; kwargs...` are passed on to `read`
 after the entry `i` in zip reader `r` is opened.
 """
-zip_readentry(r::ZipReader, i, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...), r, i)
+zip_readentry(r::ZipReader, i::Integer, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...), r, i)
 
 
 
@@ -276,6 +275,12 @@ function parse_central_directory(io::IO)
     end
     seek(io, central_dir_offset)
     central_dir_buffer::Vector{UInt8} = read(io)
+    entries = parse_central_directory_headers!(central_dir_buffer, num_entries)
+
+    (;entries, central_dir_buffer, central_dir_offset)
+end
+
+function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num_entries::Int64)::Vector{EntryInfo}
     io_b = IOBuffer(central_dir_buffer)
     seekstart(io_b)
     # parse central directory headers
@@ -285,41 +290,41 @@ function parse_central_directory(io::IO)
     for i in 1:num_entries
         # central file header signature
         @argcheck readle(io_b, UInt32) == 0x02014b50
-        local version_made = readle(io_b, UInt8)
-        local os = readle(io_b, UInt8)
+        version_made = readle(io_b, UInt8)
+        os = readle(io_b, UInt8)
         # An old version of 7zip added the OS byte to version needed. So ignore the top byte here. https://sourceforge.net/p/sevenzip/bugs/1019/
-        local version_needed = readle(io_b, UInt16) & 0x00FF
-        local bit_flags = readle(io_b, UInt16)
-        local method = readle(io_b, UInt16)
-        local dos_time = readle(io_b, UInt16)
-        local dos_date = readle(io_b, UInt16)
-        local crc32 = readle(io_b, UInt32)
-        local c_size32 = readle(io_b, UInt32)
-        local u_size32 = readle(io_b, UInt32)
-        local name_len = readle(io_b, UInt16)
-        local extras_len = readle(io_b, UInt16)
-        local comment_len = readle(io_b, UInt16)
-        local disk16 = readle(io_b, UInt16)
-        local internal_attrs = readle(io_b, UInt16)
-        local external_attrs = readle(io_b, UInt32)
-        local offset32 = readle(io_b, UInt32)
-        local name_start = position(io_b) + 1
+        version_needed = readle(io_b, UInt16) & 0x00FF
+        bit_flags = readle(io_b, UInt16)
+        method = readle(io_b, UInt16)
+        dos_time = readle(io_b, UInt16)
+        dos_date = readle(io_b, UInt16)
+        crc32 = readle(io_b, UInt32)
+        c_size32 = readle(io_b, UInt32)
+        u_size32 = readle(io_b, UInt32)
+        name_len = readle(io_b, UInt16)
+        extras_len = readle(io_b, UInt16)
+        comment_len = readle(io_b, UInt16)
+        disk16 = readle(io_b, UInt16)
+        internal_attrs = readle(io_b, UInt16)
+        external_attrs = readle(io_b, UInt32)
+        offset32 = readle(io_b, UInt32)
+        name_start = position(io_b) + 1
         skip(io_b, name_len)
-        local name_end = position(io_b)
-        local name = StringView(view(central_dir_buffer, name_start:name_end))
+        name_end = position(io_b)
+        name = StringView(view(central_dir_buffer, name_start:name_end))
         #reading the variable sized extra fields
         # Parse Zip64 and check disk number is 0
         # Assume no zip64 is used, unless the extra field is found
-        local uncompressed_size::UInt64 = u_size32
-        local compressed_size::UInt64 = c_size32
-        local offset::UInt64 = offset32
-        local n_disk::UInt32 = disk16
-        local c_size_zip64 = false
-        local u_size_zip64 = false
-        local offset_zip64 = false
-        local n_disk_zip64 = false
+        uncompressed_size::UInt64 = u_size32
+        compressed_size::UInt64 = c_size32
+        offset::UInt64 = offset32
+        n_disk::UInt32 = disk16
+        c_size_zip64 = false
+        u_size_zip64 = false
+        offset_zip64 = false
+        n_disk_zip64 = false
         if !iszero(extras_len)
-            local extras_bytes_left::Int = extras_len
+            extras_bytes_left::Int = extras_len
             # local p::Int = 1
             while extras_bytes_left ≥ 4
                 local id = readle(io_b, UInt16)
@@ -357,10 +362,10 @@ function parse_central_directory(io::IO)
         end
         @argcheck n_disk == 0
 
-        local comment = if !iszero(comment_len)
-            local comment_start = position(io_b) + 1
+        comment = if !iszero(comment_len)
+            comment_start = position(io_b) + 1
             skip(io_b, comment_len)
-            local comment_end = position(io_b)
+            comment_end = position(io_b)
             StringView(view(central_dir_buffer, comment_start:comment_end))
         else
             StringView(empty_buffer)
@@ -397,10 +402,49 @@ function parse_central_directory(io::IO)
     end
 
     resize!(central_dir_buffer, position(io_b))
-
-    (;entries, central_dir_buffer, central_dir_offset)
+    entries
 end
 
+"""
+    struct ZipFileReader
+    ZipFileReader(filename::AbstractString)
+    ZipFileReader(f::Function, filename::AbstractString)
+
+Create a reader for a zip archive in a file at path `filename`.
+
+The file must not be modified while being read.
+
+`zip_nentries(r::ZipFileReader)::Int` returns the 
+number of entries in the archive. 
+
+`zip_names(r::ZipFileReader)::Vector{String}` returns the names of all the entries in the archive.
+
+The following get information about an entry in the archive:
+
+Entries are indexed from `1:zip_nentries(r)`
+
+1. `zip_name(r::ZipFileReader, i::Integer)::String`
+1. `zip_uncompressed_size(r::ZipFileReader, i::Integer)::UInt64`
+
+`zip_test_entry(r::ZipFileReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
+
+Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` if you are worried about data corruption.
+
+`zip_openentry` and `zip_readentry` can be used to read data from an entry.
+
+To fully close the file, close all opened entries and the parent `ZipFileReader` object.
+
+This will happen automatically if the do block method is used
+for both the `ZipFileReader` constructor and `zip_openentry`
+
+After closing the returned `ZipFileReader`, any opened entries will remain opened and are still readable.
+
+# Multi threading
+
+The returned `ZipFileReader` object can safely be used from multiple threads; 
+however, the objects returned by `zip_openentry` 
+should only be accessed by one thread at a time.
+"""
 function ZipFileReader(filename::AbstractString)
     io_lock = ReentrantLock()
     # I'm not sure if the lock is needed in the constructor.
@@ -475,15 +519,16 @@ end
 
 
 """
-    zip_openentry(r::ZipFileReader, i::Integer)
+    zip_openentry(r::ZipReader, i::Integer)
+    zip_openentry(f::Function, r::ZipReader, i::Integer)
 
 Open entry `i` from `r` as a readable IO.
 
-Make sure to close this when done reading.
+Make sure to close this when done reading, 
+if not using the do block method.
 
-Multiple entries can be open and read at the same time in multiple threads.
-The stream returned by this function should not be 
-read concurrently.
+The stream returned by this function
+should only be accessed by one thread at a time.
 """
 function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     entry::EntryInfo = r.entries[i]
@@ -536,8 +581,8 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     end
 end
 
-function zip_openentry(f::Function, r::ZipReader, args...)
-    io = zip_openentry(r, args...)
+function zip_openentry(f::Function, r::ZipReader, i::Integer)
+    io = zip_openentry(r, i)
     try
         f(io)
     finally
@@ -571,10 +616,11 @@ function Base.unsafe_read(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)::Nothi
     nothing
 end
 
+# These functions were added to make JET happy
+# They should never actually get called.
 function Base.read(io::ZipFileEntryReader, ::Type{UInt8})
     error("ZipFileEntryReader does not support byte I/O")
 end
-
 function Base.unsafe_write(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)
     throw(ArgumentError("ZipFileEntryReader not writable"))
 end
@@ -628,10 +674,45 @@ function Base.close(r::ZipFileReader)::Nothing
     nothing
 end
 
-function ZipBufferReader(data::T) where T<:AbstractVector{UInt8}
-    io = IOBuffer(data)
+
+"""
+    struct ZipBufferReader{T<:AbstractVector{UInt8}}
+    ZipBufferReader(buffer::AbstractVector{UInt8})
+
+Create a reader for a zip archive in `buffer`.
+
+The array must not be modified while being read.
+
+`zip_nentries(r::ZipBufferReader)::Int` returns the 
+number of entries in the archive. 
+
+`zip_names(r::ZipBufferReader)::Vector{String}` returns the names of all the entries in the archive.
+
+The following get information about an entry in the archive:
+
+Entries are indexed from `1:zip_nentries(r)`
+
+1. `zip_name(r::ZipBufferReader, i::Integer)::String`
+1. `zip_uncompressed_size(r::ZipBufferReader, i::Integer)::UInt64`
+
+`zip_test_entry(r::ZipBufferReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
+
+Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` if you are worried about data corruption.
+
+`zip_openentry` and `zip_readentry` can be used to read data from an entry.
+
+A `ZipBufferReader` object does not need to be closed, and cannot be closed.
+
+# Multi threading
+
+The returned `ZipBufferReader` object can safely be used from multiple threads; 
+however, the objects returned by `zip_openentry` 
+should only be accessed by one thread at a time.
+"""
+function ZipBufferReader(buffer::AbstractVector{UInt8})
+    io = IOBuffer(buffer)
     entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
-    ZipBufferReader{T}(entries, central_dir_buffer, central_dir_offset, data)
+    ZipBufferReader{typeof(buffer)}(entries, central_dir_buffer, central_dir_offset, buffer)
 end
 
 function Base.show(io::IO, r::ZipBufferReader)
