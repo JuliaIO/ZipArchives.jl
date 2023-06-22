@@ -9,7 +9,7 @@ using ZipArchives
             zip_writefile(w,"$i",codeunits("$(-i)"))
         end
     end
-    ZipFileReader(filename) do r
+    zip_open_filereader(filename) do r
         @test zip_nentries(r) == N
         for i in 1:N
             @test zip_name(r, i) == "$(i)"
@@ -33,7 +33,7 @@ end
             write(w, x)
         end
     end
-    ZipFileReader(filename) do r
+    zip_open_filereader(filename) do r
         @test zip_nentries(r) == 1
         zip_test_entry(r, 1)
     end
@@ -52,7 +52,7 @@ end
             zip_writefile(w,"$i", x)
         end
     end
-    ZipFileReader(filename) do r
+    zip_open_filereader(filename) do r
         @test zip_nentries(r) == 2^13
         for i in 1:2^13
             @test zip_name(r, i) == "$(i)"
@@ -70,7 +70,7 @@ end
             zip_writefile(w,"$i", x)
         end
     end
-    ZipFileReader(filename) do r
+    zip_open_filereader(filename) do r
         @test zip_nentries(r) == 2^16
         for i in 1:2^16
             @test zip_name(r, i) == "$(i)"

@@ -39,6 +39,11 @@ struct EntryInfo
     comment::StringView{typeof(empty_buffer)}
 end
 
+"""
+    struct ZipFileReader
+
+Represents a zip archive file reader returned by [`zip_open_filereader`](@ref) 
+"""
 struct ZipFileReader
     entries::Vector{EntryInfo}
     central_dir_buffer::Vector{UInt8}

@@ -36,9 +36,9 @@ using Test
         write(w, "I am data inside test2.txt in the zip file")
     end
 
-    # Read a zip file with `ZipFileReader`
-    ZipFileReader(filename) do r
-        @test repr(r) == "ZipArchives.ZipFileReader($(repr(filename)))"
+    # Read a zip file with `zip_open_filereader`
+    zip_open_filereader(filename) do r
+        @test repr(r) == "ZipArchives.zip_open_filereader($(repr(filename)))"
         zip_nentries(r) == 3
         @test zip_names(r) == ["test/test1.txt", "test/empty.txt", "test/test2.txt"]
         @test zip_name(r, 3) == "test/test2.txt"

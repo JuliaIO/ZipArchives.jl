@@ -9,6 +9,7 @@ include("types.jl")
 
 include("reader.jl")
 export ZipFileReader
+export zip_open_filereader
 export ZipBufferReader
 
 export zip_crc32

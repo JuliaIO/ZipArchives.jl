@@ -109,8 +109,8 @@ end
     cp(invalid_file, filename)
     data = read(filename)
     @test_throws ArgumentError ZipBufferReader(data)
-    @test_throws ArgumentError r = ZipFileReader(filename)
-    # ZipFileReader will close the file if it has an error while parsing.
+    @test_throws ArgumentError r = zip_open_filereader(filename)
+    # zip_open_filereader will close the file if it has an error while parsing.
     # this will let the file be removed afterwards on windows.
     rm(filename)
 end
@@ -136,7 +136,7 @@ end
     @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_openentry(r, 1)
     @test zip_iscompressed(r, 1)
     @test zip_names(r) == ["lzma_data"]
-    ZipFileReader(filename) do r
+    zip_open_filereader(filename) do r
         @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_test_entry(r, 1)
         @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_openentry(r, 1)
         @test zip_iscompressed(r, 1)
@@ -166,7 +166,7 @@ end
     ref_file = testdata*"zip64.zip"
     filename = tempname()
     cp(ref_file, filename)
-    r = ZipFileReader(filename)
+    r = zip_open_filereader(filename)
     io1 = zip_openentry(r, 1)
     close(r)
     # data can still be read after `r` is closed
@@ -188,7 +188,7 @@ end
         zip_writefile(w, "test.txt", b"This small file is in STORE format.\n")
     end
 
-    r = ZipFileReader(filename)
+    r = zip_open_filereader(filename)
     io = zip_openentry(r, 1)
     close(r)
     @test !zip_iscompressed(r, 1)
@@ -237,7 +237,7 @@ end
 end
 
 function rewrite_zip(old::AbstractString, new::AbstractString)
-    ZipFileReader(old) do r
+    zip_open_filereader(old) do r
         ZipWriter(new) do w
             for i in 1:zip_nentries(r)
                 name = zip_name(r, i)
