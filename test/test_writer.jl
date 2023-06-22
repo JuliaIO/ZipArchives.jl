@@ -91,7 +91,7 @@ include("external_unzippers.jl")
             unzipper(zippath, tmpout)
             # Read zippath with ZipFileReader
             # Check file names and data match
-            ZipFileReader(zippath) do dir
+            zip_open_filereader(zippath) do dir
                 for i in 1:zip_nentries(dir)
                     local name = zip_name(dir, i)
                     local extracted_path = joinpath(tmpout, name)
@@ -148,7 +148,7 @@ end
         zip_commitfile(w)
         @test zip_nentries(w) == 1
         close(w)
-        ZipFileReader(filename) do r
+        zip_open_filereader(filename) do r
             @test zip_names(r) == ["good_file"]
             zip_openentry(r, 1) do file
                 @test read(file, String) == "sqrt(1.0): $(sqrt(1.0))"
@@ -241,7 +241,7 @@ end
             write(w, "inner4 text")
             @test_throws ArgumentError zip_commitfile(w)
         end
-        ZipFileReader(filename) do r
+        zip_open_filereader(filename) do r
             @test zip_names(r) == ["inner2.txt"]
             zip_openentry(r, 1) do entryio
                 @test read(entryio, String) == "inner2 text"

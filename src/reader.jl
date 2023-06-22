@@ -406,9 +406,8 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
 end
 
 """
-    struct ZipFileReader
-    ZipFileReader(filename::AbstractString)
-    ZipFileReader(f::Function, filename::AbstractString)
+    zip_open_filereader(filename::AbstractString)::ZipFileReader
+    zip_open_filereader(f::Function, filename::AbstractString)
 
 Create a reader for a zip archive in a file at path `filename`.
 
@@ -426,18 +425,21 @@ Entries are indexed from `1:zip_nentries(r)`
 1. `zip_name(r::ZipFileReader, i::Integer)::String`
 1. `zip_uncompressed_size(r::ZipFileReader, i::Integer)::UInt64`
 
-`zip_test_entry(r::ZipFileReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
+`zip_test_entry(r::ZipFileReader, i::Integer)::Nothing` 
+checks if an entry is valid and has a good checksum.
 
-Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` if you are worried about data corruption.
+Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` 
+if you are worried about data corruption.
 
 `zip_openentry` and `zip_readentry` can be used to read data from an entry.
 
 To fully close the file, close all opened entries and the parent `ZipFileReader` object.
 
-This will happen automatically if the do block method is used
-for both the `ZipFileReader` constructor and `zip_openentry`
+This will happen automatically if the do block method 
+is used for `zip_open_filereader` and `zip_openentry`.
 
-After closing the returned `ZipFileReader`, any opened entries will remain opened and are still readable.
+After closing the returned `ZipFileReader`, any opened entries 
+will remain opened and are still readable.
 
 # Multi threading
 
@@ -445,7 +447,7 @@ The returned `ZipFileReader` object can safely be used from multiple threads;
 however, the objects returned by `zip_openentry` 
 should only be accessed by one thread at a time.
 """
-function ZipFileReader(filename::AbstractString)
+function zip_open_filereader(filename::AbstractString)::ZipFileReader
     io_lock = ReentrantLock()
     # I'm not sure if the lock is needed in the constructor.
     io = open(filename; lock=false)
@@ -476,9 +478,8 @@ function ZipFileReader(filename::AbstractString)
         rethrow()
     end
 end
-
-function ZipFileReader(f::Function, filename::AbstractString)
-    r = ZipFileReader(filename)
+function zip_open_filereader(f::Function, filename::AbstractString)
+    r = zip_open_filereader(filename)
     try
         f(r)
     finally
@@ -487,7 +488,7 @@ function ZipFileReader(f::Function, filename::AbstractString)
 end
 
 function Base.show(io::IO, r::ZipFileReader)
-    print(io, "ZipArchives.ZipFileReader(")
+    print(io, "ZipArchives.zip_open_filereader(")
     print(io, repr(r._name))
     print(io, ")")
 end
