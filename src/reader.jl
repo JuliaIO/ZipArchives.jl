@@ -76,7 +76,7 @@ zip_isdir(x::HasEntries, i::Integer)::Bool = endswith(x.entries[i].name, "/")
 """
     zip_isdir(x::HasEntries, s::AbstractString)::Bool
 
-Return if any entry has a relative path starting with `s`.
+Return if `s` is an implicit or explicit directory in `x`
 """
 function zip_isdir(x::HasEntries, s::AbstractString)::Bool
     if !endswith(s,"/")

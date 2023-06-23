@@ -190,6 +190,10 @@ end
     r = ZipBufferReader(read(io))
     @test zip_names(r) == ["empty_dir/", "symlink_entry", "script.sh", "script2.sh", "weird thing"]
     @test zip_isdir(r, 1)
+    @test zip_isdir(r, "empty_dir/")
+    @test zip_isdir(r, "empty_dir")
+    @test !zip_isdir(r, "")
+    @test !zip_isdir(r, "/")
     @test !zip_isexecutablefile(r, 1)
 
     @test !zip_isdir(r, 2)
