@@ -247,13 +247,9 @@ function rewrite_zip(old::AbstractString, new::AbstractString)
                     continue
                 end
                 isexe = zip_isexecutablefile(r, i)
-                comp = if zip_iscompressed(r, i)
-                    ZipArchives.Deflate
-                else
-                    ZipArchives.Store
-                end
+                comp = zip_iscompressed(r, i)
                 # zip_writefile(w, name, zip_readentry(r, i); executable=isexe)
-                zip_newfile(w, name; executable=isexe, compression_method= comp)
+                zip_newfile(w, name; executable=isexe, compress=comp)
                 zip_openentry(r, i) do io
                     write(w, io)
                 end

@@ -66,7 +66,37 @@ function zip_definitely_utf8(x::HasEntries, i::Integer)::Bool
     )
 end
 
+"""
+    zip_isdir(x::HasEntries, i::Integer)::Bool
+
+Return if entry `i` is a directory.
+"""
 zip_isdir(x::HasEntries, i::Integer)::Bool = endswith(x.entries[i].name, "/")
+
+"""
+    zip_isdir(x::HasEntries, s::AbstractString)::Bool
+
+Return if `s` is an implicit or explicit directory in `x`
+"""
+function zip_isdir(x::HasEntries, s::AbstractString)::Bool
+    if !endswith(s,"/")
+        s *= "/"
+    end
+    any(x.entries) do e
+        startswith(e.name, s)
+    end
+end
+
+"""
+    zip_findlast_entry(x::HasEntries, s::AbstractString)::Union{Nothing, Int}
+
+Return the index of the last entry with name `s` or `nothing` if not found.
+"""
+function zip_findlast_entry(x::HasEntries, s::AbstractString)::Union{Nothing, Int}
+    findlast(x.entries) do e
+        e.name==s
+    end
+end
 
 function zip_isexecutablefile(x::HasEntries, i::Integer)::Bool
     entry = x.entries[i]
@@ -103,16 +133,49 @@ function zip_test_entry(r::ZipReader, i::Integer)::Nothing
     nothing
 end
 
-"""
-    zip_readentry(r, i::Integer, args...; kwargs...)
 
-Read the contents of entry `i` in `r`. 
+"""
+    zip_openentry(r::ZipReader, i::Union{AbstractString, Integer})
+    zip_openentry(f::Function, r::ZipReader, i::Union{AbstractString, Integer})
+
+Open entry `i` from `r` as a readable IO.
+
+Make sure to close this when done reading, 
+if not using the do block method.
+
+The stream returned by this function
+should only be accessed by one thread at a time.
+
+If `i` is a string open the last entry with the exact matching name.
+"""
+function zip_openentry(f::Function, r::ZipReader, i::Union{AbstractString, Integer})
+    io = zip_openentry(r, i)
+    try
+        f(io)
+    finally
+        close(io)
+    end
+end
+zip_openentry(r::ZipReader, i::Integer) = zip_openentry(r, Int(i))
+function zip_openentry(r::ZipReader, s::AbstractString)
+    i = zip_findlast_entry(r, s)
+    isnothing(i) && throw(ArgumentError("entry with name $(repr(s)) not found"))
+    zip_openentry(r, i)
+end
+
+
+
+"""
+    zip_readentry(r, i::Union{AbstractString, Integer}, args...; kwargs...)
+
+Read the contents of entry `i` in `r`.
+
+If `i` is a string read the last entry with the exact matching name.
 
 `args...; kwargs...` are passed on to `read`
-after the entry `i` in zip reader `r` is opened.
+after the entry `i` in zip reader `r` is opened with [`zip_openentry`](@ref)
 """
-zip_readentry(r::ZipReader, i::Integer, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...), r, i)
-
+zip_readentry(r::ZipReader, i::Union{AbstractString, Integer}, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...), r, i)
 
 
 
@@ -518,20 +581,7 @@ function validate_entry(entry::EntryInfo, fsize::Int64)
     nothing
 end
 
-
-"""
-    zip_openentry(r::ZipReader, i::Integer)
-    zip_openentry(f::Function, r::ZipReader, i::Integer)
-
-Open entry `i` from `r` as a readable IO.
-
-Make sure to close this when done reading, 
-if not using the do block method.
-
-The stream returned by this function
-should only be accessed by one thread at a time.
-"""
-function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
+function zip_openentry(r::ZipFileReader, i::Int)::TranscodingStream
     entry::EntryInfo = r.entries[i]
     validate_entry(entry, r._fsize)
     lock(r._lock) do
@@ -579,15 +629,6 @@ function zip_openentry(r::ZipFileReader, i::Integer)::TranscodingStream
     catch
         close(base_io)
         rethrow()
-    end
-end
-
-function zip_openentry(f::Function, r::ZipReader, i::Integer)
-    io = zip_openentry(r, i)
-    try
-        f(io)
-    finally
-        close(io)
     end
 end
 
@@ -723,7 +764,7 @@ function Base.show(io::IO, r::ZipBufferReader)
 end
 
 
-function zip_openentry(r::ZipBufferReader, i::Integer)
+function zip_openentry(r::ZipBufferReader, i::Int)
     entry::EntryInfo = r.entries[i]
     validate_entry(entry, length(r.buffer))
     io = IOBuffer(r.buffer)

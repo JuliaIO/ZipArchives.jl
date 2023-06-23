@@ -154,20 +154,21 @@ The wrapped `IO` in `w` must be seekable to use this function.
 If not see [`zip_writefile`](@ref)
 
 # Optional Keywords
-- `compression_method=Store`: `Store` is uncompressed 
-`Deflate` is compressed.
-- `compression_level::Union{Nothing,Int}=nothing`: 
-For `Deflate` defaults to -1 and can be -1 or 0 to 9.
+- `compress::Bool=false`: 
+If false no compression is used and other compression options are ignored.
+- `compression_level::Int=-1`:
 1 is fastest, 9 is smallest file size. 
 0 is no compression, and -1 is a good compromise between speed and file size.
+- `compression_method=Deflate`: Currently only `Deflate` and `Store` are supported.
 - `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
 Defaults to false.
-- `external_attrs::Union{Nothing,UInt32}=nothing`: Manually set the 
+- `external_attrs::Union{Nothing,UInt32}=nothing`: Manually override the 
 external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
 """
 function zip_newfile(w::ZipWriter, name::AbstractString; 
-        compression_method::UInt16=Store,
-        compression_level::Union{Nothing,Int}=nothing,
+        compress::Bool=false,
+        compression_method::UInt16=Deflate,
+        compression_level::Int=-1,
         executable::Union{Nothing,Bool}=nothing,
         external_attrs::Union{Nothing,UInt32}=nothing,
     )
@@ -199,12 +200,15 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
         pe.external_attrs = external_attrs
     end
 
-    codec, level_bits = if compression_method==Store
+    # If compress is false ignore other compression options
+    real_compression_method = if compress
+        compression_method
+    else
+        Store
+    end
+    codec, level_bits = if real_compression_method==Store
         (Noop(), UInt16(0))
-    elseif compression_method==Deflate
-        if isnothing(compression_level)
-            compression_level = -1
-        end
+    elseif real_compression_method==Deflate
         @argcheck compression_level ∈ (-1:9)
         (
             DeflateCompressor(;level = compression_level),
@@ -215,7 +219,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     end
     pe.bit_flags |= level_bits
     pe.transcoder = TranscodingStream(codec, io; sharedbuf=false)
-    pe.method = compression_method
+    pe.method = real_compression_method
     
     write_local_header(io, pe)
     # sometimes position before a write is the read position.

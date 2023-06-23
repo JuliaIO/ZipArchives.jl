@@ -25,7 +25,7 @@ end
     filename = tempname()
     ZipWriter(filename) do w
         zip_newfile(w, "bigfile";
-            compression_method = ZipArchives.Deflate,
+            compress=true,
             compression_level = 1,
         )
         x = zeros(UInt8,2^17)
