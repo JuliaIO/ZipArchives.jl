@@ -104,10 +104,7 @@ include("external_unzippers.jl")
                     local name = zip_name(dir, i)
                     local extracted_path = joinpath(tmpout, name)
                     @test isfile(extracted_path)
-                    zip_test_entry(dir, i)
-                    zip_openentry(dir, i) do f
-                        @test read(f) == read(extracted_path)
-                    end
+                    @test zip_readentry(dir, i) == read(extracted_path)
                 end
                 # Check number of extracted files match
                 local total_files = sum(walkdir(tmpout)) do (root, dirs, files)

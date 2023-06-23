@@ -3,6 +3,7 @@ using Pkg.Artifacts
 using Test
 using Base64
 using Random
+using MutatePlainDataArray
 import p7zip_jll
 
 @testset "find_end_of_central_directory_record unit tests" begin
@@ -236,6 +237,40 @@ end
     end
 end
 
+@testset "reading corrupt entry" begin
+    io = IOBuffer()
+    ZipWriter(io) do w
+        zip_writefile(w, "foo.txt", codeunits("KYDtLOxn"))
+    end
+    data = take!(io)
+    # mess up file data
+    data[60] = 0x03
+    r = ZipBufferReader(data)
+    @test_throws ArgumentError zip_test_entry(r, 1)
+    @test_throws ArgumentError zip_readentry(r, 1)
+    @test_throws ArgumentError zip_readentry(r, 1, String)
+    # Not all zip_readentry will check the crc32
+    @test zip_readentry(r, 1, Char) == 'K'
+    @test zip_readentry(r, 1, Char) == 'K'
+
+    # now try with a bad uncompressed_size
+    r = ZipBufferReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
+    aref(r.entries)[1].uncompressed_size[] = 2
+    @test_throws ArgumentError zip_test_entry(r, 1)
+    @test_throws ArgumentError zip_readentry(r, 1)
+
+    # now try with a bad uncompressed_size
+    r = ZipBufferReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
+    aref(r.entries)[1].uncompressed_size[] = typemax(Int64)-1
+    @test_throws ArgumentError zip_test_entry(r, 1)
+    # @test_throws OutOfMemoryError zip_readentry(r, 1)
+
+    aref(r.entries)[1].uncompressed_size[] = 1<<30
+    @test_throws ArgumentError zip_test_entry(r, 1)
+    @test_throws ArgumentError zip_readentry(r, 1)
+
+end
+
 function rewrite_zip(old::AbstractString, new::AbstractString)
     zip_open_filereader(old) do r
         ZipWriter(new) do w
@@ -248,12 +283,12 @@ function rewrite_zip(old::AbstractString, new::AbstractString)
                 end
                 isexe = zip_isexecutablefile(r, i)
                 comp = zip_iscompressed(r, i)
-                # zip_writefile(w, name, zip_readentry(r, i); executable=isexe)
-                zip_newfile(w, name; executable=isexe, compress=comp)
-                zip_openentry(r, i) do io
-                    write(w, io)
-                end
-                zip_commitfile(w)
+                zip_writefile(w, name, zip_readentry(r, i); executable=isexe)
+                # zip_newfile(w, name; executable=isexe, compress=comp)
+                # zip_openentry(r, i) do io
+                #     write(w, io)
+                # end
+                # zip_commitfile(w)
             end
         end
     end
