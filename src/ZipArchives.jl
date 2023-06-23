@@ -24,6 +24,7 @@ export zip_stored_crc32
 export zip_definitely_utf8
 export zip_isdir
 export zip_isexecutablefile
+export zip_findlast_entry
 
 export zip_test_entry
 export zip_openentry
