@@ -48,7 +48,7 @@
 #         zip_newfile(w, stuff_name;
 #             # Note, on windows this tends to make everything executable.
 #             executable = Sys.isexecutable(stuff_path),
-#             compression_method = ZipArchives.Deflate,
+#             compress = true,
 #         )
 #         open(stuff_path) do from
 #             write(w, from)
