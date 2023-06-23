@@ -83,7 +83,7 @@ function zip_isdir(x::HasEntries, s::AbstractString)::Bool
         s *= "/"
     end
     any(x.entries) do e
-        startswith(e.name, s)
+        startswith(e.name, s)::Bool
     end
 end
 
@@ -116,20 +116,24 @@ Otherwise, return nothing.
 This will also read the entry and check the crc32 matches.
 """
 function zip_test_entry(r::ZipReader, i::Integer)::Nothing
-    crc32 = Ref(UInt32(0))
-    uncompressed_size = Ref(UInt64(0))
+    saved_uncompressed_size = zip_uncompressed_size(r, i)
+    @argcheck saved_uncompressed_size < typemax(Int64)
+    saved_crc32 = zip_stored_crc32(r, i)
     zip_openentry(r, i) do io
+        real_crc32::UInt32 = 0
+        uncompressed_size::UInt64 = 0
         buffer_size = 1<<12
         buffer = zeros(UInt8, buffer_size)
         GC.@preserve buffer while !eof(io)
             nb = readbytes!(io, buffer)
-            @argcheck uncompressed_size[] < typemax(Int64)
-            uncompressed_size[] += nb
-            crc32[] = unsafe_crc32(pointer(buffer), UInt(nb), crc32[])
+            @argcheck uncompressed_size < typemax(Int64)
+            uncompressed_size += nb
+            @argcheck uncompressed_size ≤ saved_uncompressed_size
+            real_crc32 = unsafe_crc32(pointer(buffer), UInt(nb), real_crc32)
         end
+        @argcheck uncompressed_size === saved_uncompressed_size
+        @argcheck saved_crc32 == real_crc32
     end
-    @argcheck uncompressed_size[] == zip_uncompressed_size(r, i)
-    @argcheck crc32[] == zip_stored_crc32(r, i)
     nothing
 end
 
@@ -174,9 +178,34 @@ If `i` is a string read the last entry with the exact matching name.
 
 `args...; kwargs...` are passed on to `read`
 after the entry `i` in zip reader `r` is opened with [`zip_openentry`](@ref)
+
+if `args...` are empty or `String`, this will also error if the checksum doesn't match.
 """
 zip_readentry(r::ZipReader, i::Union{AbstractString, Integer}, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...), r, i)
 
+function zip_readentry(r::ZipReader, i::Integer)
+    saved_uncompressed_size = Int(zip_uncompressed_size(r, i))
+    @argcheck saved_uncompressed_size < typemax(Int64)
+    data = zip_openentry(r, i) do io
+        _d = read(io, saved_uncompressed_size)
+        @argcheck length(_d) == saved_uncompressed_size
+        @argcheck eof(io)
+        _d
+    end
+    saved_crc32 = zip_stored_crc32(r, i)
+    real_crc32 = zip_crc32(data)
+    @argcheck saved_crc32 == real_crc32
+    data
+end
+function zip_readentry(r::ZipReader, s::AbstractString)
+    i = zip_findlast_entry(r, s)
+    isnothing(i) && throw(ArgumentError("entry with name $(repr(s)) not found"))
+    zip_readentry(r, i)
+end
+
+function zip_readentry(r::ZipReader, i::Union{AbstractString, Integer}, ::Type{String})
+    String(zip_readentry(r, i))
+end
 
 
 # If this fails, io isn't a zip file, io isn't seekable, 
