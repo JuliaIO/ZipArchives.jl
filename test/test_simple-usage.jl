@@ -40,23 +40,40 @@ using Test
     zip_open_filereader(filename) do r
         @test repr(r) == "ZipArchives.zip_open_filereader($(repr(filename)))"
         zip_nentries(r) == 3
+
         @test zip_names(r) == ["test/test1.txt", "test/empty.txt", "test/test2.txt"]
         @test zip_name(r, 3) == "test/test2.txt"
+
         zip_openentry(r, 1) do io
             @test read(io, String) == "I am data inside test1.txt in the zip file"
         end
+        # or the equivalent with zip_readentry
+        @test zip_readentry(r, 1, String) == "I am data inside test1.txt in the zip file"
+        # zip_openentry and zip_readentry can also open the last matching entry by name.
+        @test zip_readentry(r, "test/test1.txt", String) == "I am data inside test1.txt in the zip file"
+        @test_throws ArgumentError("entry with name \"test1.txt\" not found") zip_readentry(r, "test1.txt", String)
+
         # entries are not compressed by default
         @test !zip_iscompressed(r, 1)
         @test zip_compressed_size(r, 1) == ncodeunits("I am data inside test1.txt in the zip file")
         @test zip_compressed_size(r, 1) == zip_uncompressed_size(r, 1)
+
         # Test that an entry has a correct checksum.
         zip_test_entry(r, 3)
+
         # entries are not marked as executable by default
         @test !zip_isexecutablefile(r, 1)
+
         # entries are not marked as directories by default
         @test !zip_isdir(r, 1)
+        # zip_isdir can also check if a directory is implicitly in the archive
+        @test zip_isdir(r, "test")
+        @test zip_isdir(r, "test/")
+        @test !zip_isdir(r, "test/test1.txt")
+
         # entry names are marked as utf8
         @test zip_definitely_utf8(r, 1)
+
     end
 
     # Read a zip file with `ZipBufferReader` This doesn't need to be closed.
