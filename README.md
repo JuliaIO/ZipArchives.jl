@@ -2,6 +2,7 @@
 
 [![Build Status](https://github.com/medyan-dev/ZipArchives.jl/workflows/CI/badge.svg)](https://github.com/medyan-dev/ZipArchives.jl/actions)
 [![codecov](https://codecov.io/gh/medyan-dev/ZipArchives.jl/branch/main/graph/badge.svg?token=K3J0T9BZ42)](https://codecov.io/gh/medyan-dev/ZipArchives.jl)
+[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
 This package is not well tested yet.
 

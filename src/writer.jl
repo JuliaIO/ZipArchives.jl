@@ -185,7 +185,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     end
     @assert !iswritable(w)
     io = w._io
-    pe = PartialEntry{typeof(io)}(;
+    pe = PartialEntry(;
         name=namestr,
         normed_name,
         w.force_zip64,
@@ -218,7 +218,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
         throw(ArgumentError("compression_method must be Deflate or Store"))
     end
     pe.bit_flags |= level_bits
-    pe.transcoder = TranscodingStream(codec, io; sharedbuf=false)
+    w.transcoder = TranscodingStream(codec, io; sharedbuf=false)
     pe.method = real_compression_method
     
     write_local_header(io, pe)
@@ -275,7 +275,7 @@ function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::Int
     (n > typemax(Int)) && throw(ArgumentError("too many bytes. Tried to write $n bytes"))
     assert_writeable(w)
     pe = something(w.partial_entry)
-    nb::UInt = unsafe_write(something(pe.transcoder), p, n)
+    nb::UInt = unsafe_write(something(w.transcoder), p, n)
     pe.crc32 = unsafe_crc32(p, nb, pe.crc32)
     pe.uncompressed_size += nb
     # pe.entry.compressed_size is updated in zip_commitfile
@@ -284,7 +284,7 @@ end
 
 function Base.position(w::ZipWriter)::Int64
     assert_writeable(w)
-    w.partial_entry.uncompressed_size
+    something(w.partial_entry).uncompressed_size
 end
 
 """
@@ -296,7 +296,8 @@ then rethrow the error.
 function zip_commitfile(w::ZipWriter)
     if iswritable(w)
         pe = something(w.partial_entry)
-        transcoder = something(pe.transcoder)
+        transcoder = something(w.transcoder)
+        w.transcoder = nothing
         w.partial_entry = nothing
         # If some error happens, the file will be partially written,
         # but not included in the central directory.
@@ -310,8 +311,8 @@ function zip_commitfile(w::ZipWriter)
         cur_offset = position(w._io)
         pe.compressed_size = cur_offset - pe.offset - pe.local_header_size
 
-        # note, make sure never to change the except for these three things.
-        if !all(iszero, (pe.uncompressed_size, pe.compressed_size, pe.crc32))
+        # note, make sure never to change the partial_entry without increasing these
+        if !iszero(pe.uncompressed_size) | !iszero(pe.compressed_size)
             # Must go back and update the local header if any data was written.
             # TODO add better error message about requiring seekable IO if this fails
             try
@@ -345,8 +346,8 @@ so will be ignored when the zip archive is read.
 """
 function zip_abortfile(w::ZipWriter)
     if iswritable(w)
-        pe = something(w.partial_entry)
-        transcoder = something(pe.transcoder)
+        transcoder = something(w.transcoder)
+        w.transcoder = nothing
         w.partial_entry = nothing
         # Finish the compressing here, but don't close underlying IO.
         try
@@ -391,7 +392,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     @assert !iswritable(w)
     io = w._io
     crc32 = zip_crc32(data)
-    pe = PartialEntry{typeof(io)}(;
+    pe = PartialEntry(;
         name=namestr,
         normed_name,
         offset=0,# place holder offset
