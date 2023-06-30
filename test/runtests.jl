@@ -1,7 +1,7 @@
 using Test
 using Random
 using ZipArchives
-using Aqua
+import Aqua
 
 Aqua.test_all(ZipArchives)
 
