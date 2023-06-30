@@ -81,7 +81,7 @@ struct ZipBufferReader{T<:AbstractVector{UInt8}}
 end
 
 
-Base.@kwdef mutable struct PartialEntry{S<:IO}
+Base.@kwdef mutable struct PartialEntry
     name::String
     "lowercase normalized name used to check for name collisions"
     normed_name::Union{Nothing, String}
@@ -97,7 +97,6 @@ Base.@kwdef mutable struct PartialEntry{S<:IO}
     compressed_size::UInt64 = 0
     uncompressed_size::UInt64 = 0
     local_header_size::Int64 = 50 + ncodeunits(name)
-    transcoder::Union{Nothing, NoopStream{S}, DeflateCompressorStream{S}} = nothing
 end
 
 mutable struct ZipWriter{S<:IO} <: IO
@@ -105,11 +104,12 @@ mutable struct ZipWriter{S<:IO} <: IO
     _own_io::Bool
     entries::Vector{EntryInfo}
     central_dir_buffer::Vector{UInt8}
-    partial_entry::Union{Nothing, PartialEntry{S}}
+    partial_entry::Union{Nothing, PartialEntry}
     closed::Bool
     force_zip64::Bool
     used_names_lower::Set{String}
     check_names::Bool
+    transcoder::Union{Nothing, NoopStream{S}, DeflateCompressorStream{S}}
     function ZipWriter(io::IO;
             check_names::Bool=true,
             own_io::Bool=false,
@@ -125,6 +125,7 @@ mutable struct ZipWriter{S<:IO} <: IO
             force_zip64,
             Set{String}(),
             check_names,
+            nothing,
         )
     end
 end

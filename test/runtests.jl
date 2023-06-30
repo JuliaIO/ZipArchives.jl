@@ -1,6 +1,9 @@
 using Test
 using Random
 using ZipArchives
+import Aqua
+
+Aqua.test_all(ZipArchives)
 
 Random.seed!(1234)
 
