@@ -35,8 +35,8 @@ struct EntryInfo
     n_disk_zip64::Bool
     internal_attrs::UInt16
     external_attrs::UInt32
-    name::StringView{typeof(empty_buffer)}
-    comment::StringView{typeof(empty_buffer)}
+    name_range::UnitRange{Int}
+    comment_range::UnitRange{Int}
 end
 
 """

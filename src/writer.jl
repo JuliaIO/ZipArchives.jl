@@ -101,7 +101,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         w.entries = entries
         w.central_dir_buffer = central_dir_buffer
         if w.check_names
-            w.used_names_lower = Set{String}(norm_name(e.name) for e in entries)
+            w.used_names_lower = Set{String}(norm_name(StringView(view(central_dir_buffer, e.name_range))) for e in entries)
         end
         w
     catch # close io if there is an error parsing entries
@@ -435,8 +435,8 @@ function zip_name_collision(w::ZipWriter, new_name::AbstractString)::Bool
         norm_name(new_name) ∈ w.used_names_lower
     else
         nname = norm_name(new_name)
-        any(w.entries) do e
-            nname == norm_name(e.name)
+        any(eachindex(w.entries)) do i
+            nname == norm_name(StringView(_name_view(w, i)))
         end
     end
 end
@@ -618,7 +618,7 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
         p += write_buffer(b, p, UInt32(pe.offset))
     end
     p += write_buffer(b, p, pe.name)
-    name_view = StringView(view(b, p-name_len:p-1))
+    name_range = p-name_len:p-1
     if use_zip64
         p += write_buffer(b, p, 0x0001)
         p += write_buffer(b, p, UInt16(8*3))
@@ -627,7 +627,7 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
         p += write_buffer(b, p, pe.offset)
     end
     p += write_buffer(b, p, pe.comment)
-    comment_view = StringView(view(b, p-comment_len:p-1))
+    comment_range = p-comment_len:p-1
     @assert p == length(b)+1
     
     EntryInfo(
@@ -648,8 +648,8 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
         false,
         UInt16(0),
         pe.external_attrs,
-        name_view,
-        comment_view,
+        name_range,
+        comment_range,
     )
 end
 
