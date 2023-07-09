@@ -7,6 +7,13 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
+const ByteArray = Union{
+    Base.CodeUnits{UInt8, String},
+    Vector{UInt8},
+    Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
+    Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}}
+}
+
 """
     zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
 
@@ -82,11 +89,19 @@ Return if `s` is an implicit or explicit directory in `x`
 """
 zip_isdir(x::HasEntries, s::AbstractString)::Bool = zip_isdir(x, String(s))
 function zip_isdir(x::HasEntries, s::String)::Bool
-    if !endswith(s, "/")
-        s *= "/"
+    data = collect(codeunits(s))
+    if isempty(data) || data[end] != UInt8('/')
+        push!(data, UInt8('/'))
     end
-    any(eachindex(x.entries)) do i
-        startswith(StringView(_name_view(x, i)), s)::Bool
+    prefix_len = length(data)
+    b = x.central_dir_buffer
+    any(x.entries) do e
+        name_range = e.name_range
+        name_start = first(name_range)
+        (
+            length(name_range) ≥ prefix_len &&
+            data == view(b, name_range[1]:name_range[prefix_len])
+        )::Bool
     end
 end
 
@@ -95,9 +110,11 @@ end
 
 Return the index of the last entry with name `s` or `nothing` if not found.
 """
-function zip_findlast_entry(x::HasEntries, s::AbstractString)::Union{Nothing, Int}
+zip_findlast_entry(x::HasEntries, s::AbstractString)::Union{Nothing, Int} = zip_findlast_entry(x, String(s))
+function zip_findlast_entry(x::HasEntries, s::String)::Union{Nothing, Int}
+    data = codeunits(s)
     findlast(eachindex(x.entries)) do i
-        StringView(_name_view(x, i))==s
+        _name_view(x, i) == data
     end
 end
 

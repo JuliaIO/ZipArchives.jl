@@ -101,7 +101,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         w.entries = entries
         w.central_dir_buffer = central_dir_buffer
         if w.check_names
-            w.used_names_lower = Set{String}(norm_name(StringView(view(central_dir_buffer, e.name_range))) for e in entries)
+            w.used_names_lower = Set{String}(norm_name(String(view(central_dir_buffer, e.name_range))) for e in entries)
         end
         w
     catch # close io if there is an error parsing entries
@@ -174,7 +174,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     )
     @argcheck isopen(w)
     zip_commitfile(w)
-    namestr = String(name)
+    namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     normed_name = nothing
     if w.check_names
@@ -380,7 +380,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     )
     @argcheck isopen(w)
     zip_commitfile(w)
-    namestr = String(name)
+    namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     normed_name=nothing
     if w.check_names
@@ -430,13 +430,14 @@ Return true if `new_name` matches an existing committed entry.
 The check is case insensitive, and 
 insensitive to leading, trailing, and repeated `/`.
 """
-function zip_name_collision(w::ZipWriter, new_name::AbstractString)::Bool
+zip_name_collision(w::ZipWriter, new_name::AbstractString)::Bool = zip_name_collision(w, String(new_name))
+function zip_name_collision(w::ZipWriter, new_name::String)::Bool
     if w.check_names
         norm_name(new_name) ∈ w.used_names_lower
     else
         nname = norm_name(new_name)
         any(eachindex(w.entries)) do i
-            nname == norm_name(StringView(_name_view(w, i)))
+            nname == norm_name(String(_name_view(w, i)))
         end
     end
 end
@@ -451,7 +452,7 @@ Write a directory entry named `name`.
 This is only needed to add an empty directory.
 """
 function zip_mkdir(w::ZipWriter, name::AbstractString)
-    namestr = String(name)
+    namestr::String = String(name)
     if !endswith(namestr, "/")
         namestr = namestr*"/"
     end

@@ -1,17 +1,6 @@
 using CodecZlib
 using TranscodingStreams
-using StringViews
 
-const empty_buffer = view(UInt8[],1:0)
-
-
-
-const ByteArray = Union{
-    Base.CodeUnits{UInt8, String},
-    Vector{UInt8},
-    Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
-    Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}}
-}
 
 """
 This is an internal type.
