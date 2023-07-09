@@ -53,6 +53,7 @@ ZipWriter(joinpath(tmp, "utf8.zip")) do w
     zip_newfile(w, "test2.txt")
     write(w, "I am data inside test2.txt in the zip file")
     @test !zip_name_collision(w, "test2")
+    @test !zip_name_collision(w, SubString("test2", 1:2))
     @test !zip_name_collision(w, "test2.txt/")
     zip_commitfile(w)
     @test !zip_name_collision(w, "test2")
@@ -189,9 +190,12 @@ end
     @test zip_isdir(r, 1)
     @test zip_isdir(r, "empty_dir/")
     @test zip_isdir(r, "empty_dir")
+    @test zip_isdir(r, SubString("empty_dir", 1))
     @test !zip_isdir(r, "")
     @test !zip_isdir(r, "/")
     @test !zip_isexecutablefile(r, 1)
+    @test zip_findlast_entry(r, "script.sh") == 3
+    @test zip_findlast_entry(r, SubString("script.sh")) == 3
 
     @test !zip_isdir(r, 2)
     @test !zip_isexecutablefile(r, 2)

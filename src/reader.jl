@@ -7,6 +7,13 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
+const ByteArray = Union{
+    Base.CodeUnits{UInt8, String},
+    Vector{UInt8},
+    Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
+    Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}}
+}
+
 """
     zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
 
@@ -30,7 +37,7 @@ readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
 """
 Return the minimum size of a local header for an entry.
 """
-min_local_header_size(entry::EntryInfo) = 30 + ncodeunits(entry.name)
+min_local_header_size(entry::EntryInfo) = 30 + length(entry.name_range)
 
 const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
 
@@ -40,13 +47,15 @@ const ZipReader = Union{ZipFileReader, ZipBufferReader}
 # Getters
 
 zip_nentries(x::HasEntries)::Int = length(x.entries)
-zip_name(x::HasEntries, i::Integer)::String = x.entries[i].name
+zip_name(x::HasEntries, i::Integer)::String = String(_name_view(x, i))
 zip_names(x::HasEntries)::Vector{String} = String[zip_name(x,i) for i in 1:zip_nentries(x)]
 zip_uncompressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].uncompressed_size
 zip_compressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].compressed_size
 zip_iscompressed(x::HasEntries, i::Integer)::Bool = x.entries[i].method != Store
-zip_comment(x::HasEntries, i::Integer)::String = x.entries[i].comment
+zip_comment(x::HasEntries, i::Integer)::String = String(view(x.central_dir_buffer, x.entries[i].comment_range))
 zip_stored_crc32(x::HasEntries, i::Integer)::UInt32 = x.entries[i].crc32
+
+_name_view(x::HasEntries, i::Integer) = view(x.central_dir_buffer, x.entries[i].name_range)
 
 """
     zip_definitely_utf8(x::HasEntries, i::Integer)::Bool
@@ -59,10 +68,10 @@ This package will never attempt to transcode filenames.
 """
 function zip_definitely_utf8(x::HasEntries, i::Integer)::Bool
     entry = x.entries[i]
-    name::String = entry.name
+    name_view = _name_view(x, i)
     (
-        isascii(name) ||
-        !iszero(entry.bit_flags & UInt16(1<<11)) && isvalid(name)
+        all(<(0x80), name_view) || # isascii
+        !iszero(entry.bit_flags & UInt16(1<<11)) && isvalid(String, name_view)
     )
 end
 
@@ -71,19 +80,27 @@ end
 
 Return if entry `i` is a directory.
 """
-zip_isdir(x::HasEntries, i::Integer)::Bool = endswith(x.entries[i].name, "/")
+zip_isdir(x::HasEntries, i::Integer)::Bool = _name_view(x, i)[end] == UInt8('/')
 
 """
     zip_isdir(x::HasEntries, s::AbstractString)::Bool
 
 Return if `s` is an implicit or explicit directory in `x`
 """
-function zip_isdir(x::HasEntries, s::AbstractString)::Bool
-    if !endswith(s,"/")
-        s *= "/"
+zip_isdir(x::HasEntries, s::AbstractString)::Bool = zip_isdir(x, String(s))
+function zip_isdir(x::HasEntries, s::String)::Bool
+    data = collect(codeunits(s))
+    if isempty(data) || data[end] != UInt8('/')
+        push!(data, UInt8('/'))
     end
+    prefix_len = length(data)
+    b = x.central_dir_buffer
     any(x.entries) do e
-        startswith(e.name, s)::Bool
+        name_range = e.name_range
+        (
+            length(name_range) ≥ prefix_len &&
+            data == view(b, name_range[1]:name_range[prefix_len])
+        )::Bool
     end
 end
 
@@ -92,9 +109,11 @@ end
 
 Return the index of the last entry with name `s` or `nothing` if not found.
 """
-function zip_findlast_entry(x::HasEntries, s::AbstractString)::Union{Nothing, Int}
-    findlast(x.entries) do e
-        e.name==s
+zip_findlast_entry(x::HasEntries, s::AbstractString)::Union{Nothing, Int} = zip_findlast_entry(x, String(s))
+function zip_findlast_entry(x::HasEntries, s::String)::Union{Nothing, Int}
+    data = codeunits(s)
+    findlast(eachindex(x.entries)) do i
+        _name_view(x, i) == data
     end
 end
 
@@ -403,7 +422,7 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
         name_start = position(io_b) + 1
         skip(io_b, name_len)
         name_end = position(io_b)
-        name = StringView(view(central_dir_buffer, name_start:name_end))
+        name_range = name_start:name_end
         #reading the variable sized extra fields
         # Parse Zip64 and check disk number is 0
         # Assume no zip64 is used, unless the extra field is found
@@ -454,13 +473,13 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
         end
         @argcheck n_disk == 0
 
-        comment = if !iszero(comment_len)
+        comment_range = if !iszero(comment_len)
             comment_start = position(io_b) + 1
             skip(io_b, comment_len)
             comment_end = position(io_b)
-            StringView(view(central_dir_buffer, comment_start:comment_end))
+            comment_start:comment_end
         else
-            StringView(empty_buffer)
+            1:0
         end
         entries[i] = EntryInfo(
             version_made::UInt8,
@@ -480,8 +499,8 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
             n_disk_zip64::Bool,
             internal_attrs::UInt16,
             external_attrs::UInt32,
-            name,
-            comment,
+            name_range,
+            comment_range,
         )
     end
     # Maybe num_entries was too small: See https://github.com/thejoshwolfe/yauzl/issues/60
@@ -631,9 +650,9 @@ function zip_openentry(r::ZipFileReader, i::Int)::TranscodingStream
         @argcheck readle(r._io, UInt16) == method
         skip(r._io, 4*4)
         local_name_len = readle(r._io, UInt16)
-        @argcheck local_name_len == ncodeunits(entry.name)
+        @argcheck local_name_len == length(entry.name_range)
         extra_len = readle(r._io, UInt16)
-        @argcheck String(read(r._io, local_name_len)) == entry.name
+        @argcheck read(r._io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
         skip(r._io, extra_len)
         offset += 30 + extra_len + local_name_len
         @argcheck offset + entry.compressed_size ≤ r._fsize
@@ -806,9 +825,9 @@ function zip_openentry(r::ZipBufferReader, i::Int)
     @argcheck readle(io, UInt16) == method
     skip(io, 4*4)
     local_name_len = readle(io, UInt16)
-    @argcheck local_name_len == ncodeunits(entry.name)
+    @argcheck local_name_len == length(entry.name_range)
     extra_len = readle(io, UInt16)
-    @argcheck String(read(io, local_name_len)) == entry.name
+    @argcheck read(io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
     skip(io, extra_len)
     offset += 30 + extra_len + local_name_len
     @argcheck offset + entry.compressed_size ≤ length(r.buffer)
