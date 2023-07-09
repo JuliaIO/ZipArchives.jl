@@ -97,7 +97,6 @@ function zip_isdir(x::HasEntries, s::String)::Bool
     b = x.central_dir_buffer
     any(x.entries) do e
         name_range = e.name_range
-        name_start = first(name_range)
         (
             length(name_range) ≥ prefix_len &&
             data == view(b, name_range[1]:name_range[prefix_len])
