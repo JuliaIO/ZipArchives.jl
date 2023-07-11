@@ -37,7 +37,7 @@ readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
 """
 Return the minimum size of a local header for an entry.
 """
-min_local_header_size(entry::EntryInfo) = 30 + length(entry.name_range)
+min_local_header_size(entry::EntryInfo)::Int64 = 30 + length(entry.name_range)
 
 const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
 
@@ -621,11 +621,14 @@ function validate_entry(entry::EntryInfo, fsize::Int64)
     @argcheck iszero(entry.bit_flags & 1<<13) "encrypted files not supported"
     @argcheck entry.version_needed ≤ 45
     # This allows for files to overlap, which sometimes can happen.
-    @argcheck entry.compressed_size ≤ fsize - min_local_header_size(entry)
+    min_loc_h_size::Int64 = min_local_header_size(entry)
+    @argcheck min_loc_h_size > 29 
+    @argcheck min_loc_h_size ≤ fsize
+    @argcheck entry.compressed_size ≤ fsize - min_loc_h_size
     if entry.method == Store
         @argcheck entry.compressed_size == entry.uncompressed_size
     end
-    @argcheck entry.offset ≤ (fsize - min_local_header_size(entry)) - entry.compressed_size
+    @argcheck entry.offset ≤ (fsize - min_loc_h_size) - entry.compressed_size
     nothing
 end
 
@@ -640,11 +643,12 @@ function zip_openentry(r::ZipFileReader, i::Int)::TranscodingStream
             throw(ArgumentError("ZipFileReader is closed"))
         end
     end
-    offset::Int64 = entry.offset
+    local_header_offset::Int64 = entry.offset
+    entry_data_offset::Int64 = -1
     method = entry.method
     Base.@lock r._lock begin
         # read and validate local header
-        seek(r._io, offset)
+        seek(r._io, local_header_offset)
         @argcheck readle(r._io, UInt32) == 0x04034b50
         skip(r._io, 4)
         @argcheck readle(r._io, UInt16) == method
@@ -652,20 +656,30 @@ function zip_openentry(r::ZipFileReader, i::Int)::TranscodingStream
         local_name_len = readle(r._io, UInt16)
         @argcheck local_name_len == length(entry.name_range)
         extra_len = readle(r._io, UInt16)
+
+        actual_local_header_size::Int64 = 30 + extra_len + local_name_len
+        entry_data_offset = local_header_offset + actual_local_header_size
+        # make sure this doesn't overflow
+        @argcheck entry_data_offset > local_header_offset
+        @argcheck entry.compressed_size ≤ r._fsize
+        @argcheck entry_data_offset ≤ r._fsize - entry.compressed_size
+
         @argcheck read(r._io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
         skip(r._io, extra_len)
-        offset += 30 + extra_len + local_name_len
-        @argcheck offset + entry.compressed_size ≤ r._fsize
     end
+    @argcheck entry_data_offset ≥ 0
     base_io = ZipFileEntryReader(
         r,
         0,
         -1,
-        offset,
+        entry_data_offset,
         entry.crc32,
         entry.compressed_size,
         Ref(true),
     )
+    @assert base_io.compressed_size ≥ 0
+    @assert base_io.offset ≥ 0
+    @assert base_io.compressed_size + base_io.offset ≥ 0
     try
         if method == Store
             return NoopStream(base_io)
@@ -694,11 +708,13 @@ function Base.unsafe_read(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)::Nothi
     n_real::UInt = min(n, bytesavailable(io))
     r = io.r
     read_start = io.offset+io.p
+    @assert read_start > 0
     lock(r._lock) do
         seek(r._io, read_start)
         unsafe_read(r._io, p, n_real)
     end
     io.p += n_real
+    @assert io.p ≤ io.compressed_size
     if n_real != n
         @assert eof(io)
         throw(EOFError())
@@ -718,13 +734,15 @@ end
 Base.position(io::ZipFileEntryReader)::Int64 = io.p
 
 function Base.seek(io::ZipFileEntryReader, n::Integer)::ZipFileEntryReader
-    @argcheck Int64(n) ∈ 0:io.compressed_size
+    @argcheck Int64(n) ∈ Int64(0):io.compressed_size
     io.p = Int64(n)
+    @assert io.p ≤ io.compressed_size
     return io
 end
 
 function Base.seekend(io::ZipFileEntryReader)::ZipFileEntryReader
     io.p = io.compressed_size
+    @assert io.p ≤ io.compressed_size
     return io
 end
 
@@ -813,13 +831,15 @@ end
 
 
 function zip_openentry(r::ZipBufferReader, i::Int)
+    fsize::Int64 = length(r.buffer)
     entry::EntryInfo = r.entries[i]
-    validate_entry(entry, length(r.buffer))
+    compressed_size::Int64 = entry.compressed_size
+    validate_entry(entry, fsize)
     io = IOBuffer(r.buffer)
-    offset::Int64 = entry.offset
+    local_header_offset::Int64 = entry.offset
     method = entry.method
     # read and validate local header
-    seek(io, offset)
+    seek(io, local_header_offset)
     @argcheck readle(io, UInt32) == 0x04034b50
     skip(io, 4)
     @argcheck readle(io, UInt16) == method
@@ -827,12 +847,25 @@ function zip_openentry(r::ZipBufferReader, i::Int)
     local_name_len = readle(io, UInt16)
     @argcheck local_name_len == length(entry.name_range)
     extra_len = readle(io, UInt16)
+
+    actual_local_header_size::Int64 = 30 + extra_len + local_name_len
+    entry_data_offset::Int64 = local_header_offset + actual_local_header_size
+    # make sure this doesn't overflow
+    @argcheck entry_data_offset > local_header_offset
+    @argcheck compressed_size ≤ fsize
+    @argcheck entry_data_offset ≤ fsize - compressed_size
+
     @argcheck read(io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
     skip(io, extra_len)
-    offset += 30 + extra_len + local_name_len
-    @argcheck offset + entry.compressed_size ≤ length(r.buffer)
-    startidx = firstindex(r.buffer) + offset
-    lastidx = firstindex(r.buffer) + offset + entry.compressed_size - 1
+
+    begin_ind::Int64 = firstindex(r.buffer)
+    startidx = begin_ind + entry_data_offset
+    @argcheck startidx > begin_ind
+    lastidx = begin_ind + (entry_data_offset + compressed_size - 1)
+    @argcheck lastidx > begin_ind
+    @argcheck lastidx ≤ lastindex(r.buffer)
+    @argcheck length(startidx:lastidx) == compressed_size
+    
     base_io = IOBuffer(view(r.buffer, startidx:lastidx))
     if method == Store
         return base_io
