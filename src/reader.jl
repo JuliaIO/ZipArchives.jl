@@ -566,7 +566,7 @@ function zip_open_filereader(filename::AbstractString)::ZipFileReader
         entries, central_dir_buffer, central_dir_offset = lock(io_lock) do
             parse_central_directory(io)
         end
-        _ref_counter = Ref(1)
+        _ref_counter = Ref(Int64(1))
         _open = Ref(true)
         fsize = lock(io_lock) do
             _ref_counter[] = 1
