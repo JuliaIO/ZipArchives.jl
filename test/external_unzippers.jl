@@ -6,7 +6,11 @@ import ZipFile
 import p7zip_jll
 import LibArchive_jll
 # ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
-import PythonCall
+try
+    import PythonCall
+catch
+    @warn "PythonCall not working :("
+end
 
 
 
@@ -31,6 +35,10 @@ function unzip_bsdtar(zippath, dirpath)
         run(`$(exe) -x -f $(zippath) -C $(dirpath)`)
     end
     nothing
+end
+
+function have_python()
+    isdefined(@__MODULE__, :PythonCall)
 end
 
 """
@@ -75,8 +83,13 @@ end
 unzippers = Any[
     unzip_p7zip,
     unzip_bsdtar,
-    unzip_python,
 ]
+
+if have_python()
+    push!(unzippers, unzip_python)
+else
+    @info "python not found, skipping `unzip_python` tests"
+end
 
 if have_infozip()
     push!(unzippers, unzip_infozip)
