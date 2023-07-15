@@ -36,13 +36,19 @@ readle(io::IO, ::Type{UInt16}) = htol(read(io, UInt16))
 readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
 
 
-"""
+#=
 Return the minimum size of a local header for an entry.
-"""
+=#
 min_local_header_size(entry::EntryInfo)::Int64 = 30 + length(entry.name_range)
 
+"""
+    const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
+"""
 const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
 
+"""
+    const ZipReader = Union{ZipFileReader, ZipBufferReader}
+"""
 const ZipReader = Union{ZipFileReader, ZipBufferReader}
 
 
@@ -76,8 +82,6 @@ zip_names(x::HasEntries)::Vector{String} = String[zip_name(x,i) for i in 1:zip_n
 Return the marked uncompressed size of entry `i` in number of bytes.
 
 Note: if the zip file was corrupted, this might be wrong.
-
-`i` can range from `1:zip_nentries(x)`
 """
 zip_uncompressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].uncompressed_size
 
@@ -87,8 +91,6 @@ zip_uncompressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].uncompre
 Return the marked compressed size of entry `i` in number of bytes.
 
 Note: if the zip file was corrupted, this might be wrong.
-
-`i` can range from `1:zip_nentries(x)`
 """
 zip_compressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].compressed_size
 
@@ -96,8 +98,6 @@ zip_compressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].compressed
     zip_iscompressed(x::HasEntries, i::Integer)::Bool
 
 Return if entry `i` is marked as compressed.
-
-`i` can range from `1:zip_nentries(x)`
 """
 zip_iscompressed(x::HasEntries, i::Integer)::Bool = x.entries[i].method != Store
 
@@ -105,8 +105,6 @@ zip_iscompressed(x::HasEntries, i::Integer)::Bool = x.entries[i].method != Store
     zip_comment(x::HasEntries, i::Integer)::String
 
 Return the comment attached to entry `i`
-
-`i` can range from `1:zip_nentries(x)`
 """
 zip_comment(x::HasEntries, i::Integer)::String = String(view(x.central_dir_buffer, x.entries[i].comment_range))
 
@@ -116,8 +114,6 @@ zip_comment(x::HasEntries, i::Integer)::String = String(view(x.central_dir_buffe
 Return the marked crc32 of entry `i` in the central directory.
 
 Note: if the zip file was corrupted, this might be wrong.
-
-`i` can range from `1:zip_nentries(x)`
 
 See also [`zip_crc32`](@ref), [`zip_test_entry`](@ref).
 """
@@ -133,8 +129,6 @@ Return true if entry `i` name is marked as utf8 or is ascii.
 Otherwise, the name should probably be treated as a sequence of bytes.
 
 This package will never attempt to transcode filenames.
-
-`i` can range from `1:zip_nentries(x)`
 """
 function zip_definitely_utf8(x::HasEntries, i::Integer)::Bool
     entry = x.entries[i]
@@ -149,8 +143,6 @@ end
     zip_isdir(x::HasEntries, i::Integer)::Bool
 
 Return if entry `i` is a directory.
-
-`i` can range from `1:zip_nentries(x)`
 """
 zip_isdir(x::HasEntries, i::Integer)::Bool = _name_view(x, i)[end] == UInt8('/')
 
@@ -189,6 +181,11 @@ function zip_findlast_entry(x::HasEntries, s::String)::Union{Nothing, Int}
     end
 end
 
+"""
+    zip_isexecutablefile(x::HasEntries, i::Integer)::Bool
+
+Return if entry `i` is marked as a UNIX executable file.
+"""
 function zip_isexecutablefile(x::HasEntries, i::Integer)::Bool
     entry = x.entries[i]
     (
@@ -235,13 +232,15 @@ end
 
 Open entry `i` from `r` as a readable IO.
 
-Make sure to close this when done reading, 
+If `i` is a string open the last entry with the exact matching name.
+
+Make sure to close the returned stream when done reading, 
 if not using the do block method.
 
 The stream returned by this function
 should only be accessed by one thread at a time.
 
-If `i` is a string open the last entry with the exact matching name.
+See also [`zip_readentry`](@ref).
 """
 function zip_openentry(f::Function, r::ZipReader, i::Union{AbstractString, Integer})
     io = zip_openentry(r, i)
@@ -261,7 +260,7 @@ end
 
 
 """
-    zip_readentry(r, i::Union{AbstractString, Integer}, args...; kwargs...)
+    zip_readentry(r::ZipReader, i::Union{AbstractString, Integer}, args...; kwargs...)
 
 Read the contents of entry `i` in `r`.
 
@@ -271,6 +270,8 @@ If `i` is a string read the last entry with the exact matching name.
 after the entry `i` in zip reader `r` is opened with [`zip_openentry`](@ref)
 
 if `args...` are empty or `String`, this will also error if the checksum doesn't match.
+
+See also [`zip_openentry`](@ref).
 """
 zip_readentry(r::ZipReader, i::Union{AbstractString, Integer}, args...; kwargs...) = zip_openentry(io -> read(io, args...; kwargs...), r, i)
 
@@ -629,6 +630,8 @@ will remain opened and are still readable.
 The returned `ZipFileReader` object can safely be used from multiple threads; 
 however, the objects returned by `zip_openentry` 
 should only be accessed by one thread at a time.
+
+See also [`ZipBufferReader`](@ref).
 """
 function zip_open_filereader(filename::AbstractString)::ZipFileReader
     io_lock = ReentrantLock()
@@ -679,9 +682,9 @@ end
 
 Base.isopen(r::ZipFileReader)::Bool = r._open[]
 
-"""
+#=
 Throw an ArgumentError if entry cannot be extracted.
-"""
+=#
 function validate_entry(entry::EntryInfo, fsize::Int64)
     if entry.method != Store && entry.method != Deflate
         throw(ArgumentError("invalid compression method: $(entry.method). Only Store and Deflate supported for now"))
@@ -877,8 +880,6 @@ Entries are indexed from `1:zip_nentries(r)`
 
 `zip_test_entry(r::ZipBufferReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
 
-Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` if you are worried about data corruption.
-
 `zip_openentry` and `zip_readentry` can be used to read data from an entry.
 
 A `ZipBufferReader` object does not need to be closed, and cannot be closed.
@@ -886,7 +887,7 @@ A `ZipBufferReader` object does not need to be closed, and cannot be closed.
 # Multi threading
 
 The returned `ZipBufferReader` object can safely be used from multiple threads; 
-however, the objects returned by `zip_openentry` 
+however, the streams returned by `zip_openentry` 
 should only be accessed by one thread at a time.
 """
 function ZipBufferReader(buffer::AbstractVector{UInt8})

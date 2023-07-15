@@ -11,7 +11,9 @@ using TranscodingStreams
 Create a zip archive writer on `io`.
 
 These methods also work with a `filename::AbstractString` instead of an `io::IO`.
-In that case, the passed keyword arguments will be used for `Base.open`.
+
+In that case, all passed keyword arguments will be used for 
+`Base.open` in addition to `write=true`.
 
 `io` must not be modified before the `ZipWriter` is closed (except using the wrapping `ZipWriter`).
 
@@ -38,8 +40,6 @@ Unlike [`zip_newfile`](@ref) using [`zip_writefile`](@ref) doesn't require the w
 A single `ZipWriter` instance doesn't allow mutations or 
 writes from multiple threads at the same time.
 
-Use locks if you want this.
-
 # Appending
 
 The archive will start writing at the current position of `io`, so if `io`
@@ -52,7 +52,7 @@ If you want to add entries to existing zip archive, use [`zip_append_archive`](@
 
 # Optional Keywords
 - `check_names::Bool=true`: Best attempt to error if new entry names aren't valid on windows 
-or already exist in the archive in a case insensitive way.
+    or already exist in the archive in a case insensitive way.
 """
 function ZipWriter(f::Function, io::IO; zip_kwargs...)
     w = ZipWriter(io; zip_kwargs...)
@@ -82,13 +82,16 @@ end
 
 Return a `ZipWriter` that will add entries to the existing zip archive in `io`.
 
-These functions also work with a `filename::AbstractString` instead of an `io::IO`.
-In that case, the passed keyword arguments will be used for `Base.open`.
+This also works with a `filename::AbstractString` instead of an `io::IO`.
+In that case, all passed keyword arguments will be used for 
+`Base.open` in addition to `read=true, write=true`.
 
 If `io` doesn't have a valid zip archive footer already, this function will error.
 
 If `trunc_footer=true` the no longer needed zip archive footer at the end of `io` will be truncated.
 Otherwise, it will be left as is.
+
+`zip_kwargs` will be forwarded to [`ZipWriter`](@ref)
 """
 function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWriter
     try
@@ -142,7 +145,7 @@ Base.iswritable(w::ZipWriter) = !isnothing(w.partial_entry)
 
 """
     zip_newfile(w::ZipWriter, name::AbstractString; 
-        compression_method=Store,
+        compress::Bool=false,
     )
 
 Start a new file entry named `name`.
@@ -155,15 +158,15 @@ If not see [`zip_writefile`](@ref)
 
 # Optional Keywords
 - `compress::Bool=false`: 
-If false no compression is used and other compression options are ignored.
+    If false no compression is used and other compression options are ignored.
 - `compression_level::Int=-1`:
-1 is fastest, 9 is smallest file size. 
-0 is no compression, and -1 is a good compromise between speed and file size.
+    1 is fastest, 9 is smallest file size. 
+    0 is no compression, and -1 is a good compromise between speed and file size.
 - `compression_method=Deflate`: Currently only `Deflate` and `Store` are supported.
 - `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
-Defaults to false.
+    Defaults to false.
 - `external_attrs::Union{Nothing,UInt32}=nothing`: Manually override the 
-external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
+    external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
 """
 function zip_newfile(w::ZipWriter, name::AbstractString; 
         compress::Bool=false,
@@ -230,9 +233,9 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     nothing
 end
 
-"""
+#=
 Write little endian Integer or String or bytes to a buffer.
-"""
+=#
 function write_buffer(b::Vector{UInt8}, p::Int, x::Integer)::Int
     for i in 1:sizeof(x)
         b[p] = x%UInt8
@@ -370,9 +373,9 @@ Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
 
 # Optional Keywords
 - `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
-Defaults to false.
+    Defaults to false.
 - `external_attr::Union{Nothing,UInt32}=nothing`: Manually set the 
-external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
+    external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
 """
 function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8};
         executable::Union{Nothing,Bool}=nothing,
@@ -507,9 +510,8 @@ need_zip64(entry::PartialEntry)::Bool = (
     entry.offset            > typemax(Int32)
 )
 
-"""
-Always writes 50 + ncodeunits(entry.name) bytes
-"""
+
+# Always writes 50 + ncodeunits(entry.name) bytes
 function write_local_header(io::IO, entry::PartialEntry)
     name_len::UInt16 = ncodeunits(entry.name)
     @assert entry.local_header_size == 50 + name_len
@@ -559,10 +561,10 @@ function write_local_header(io::IO, entry::PartialEntry)
     n
 end
 
-"""
+#=
 Add the entry to the end of the central directory buffer `b`.
 Also return an EntryInfo.
-"""
+=#
 function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
     use_zip64 = need_zip64(pe)
     version_needed = if use_zip64

@@ -2,10 +2,10 @@ using CodecZlib
 using TranscodingStreams
 
 
-"""
+#=
 This is an internal type.
 Info about an entry in a zip file.
-"""
+=#
 struct EntryInfo
     version_made::UInt8
     os::UInt8
@@ -45,12 +45,12 @@ struct ZipFileReader
     _name::String
 end
 
-"""
+#=
 This is an internal type.
 It reads the raw possibly compressed bytes.
 It should only be exposed wrapped in a 
 `TranscodingStream`
-"""
+=#
 mutable struct ZipFileEntryReader <: IO
     r::ZipFileReader
     p::Int64
