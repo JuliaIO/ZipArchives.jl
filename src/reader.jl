@@ -18,6 +18,8 @@ const ByteArray = Union{
     zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
 
 Return the standard zip CRC32 checksum of data
+
+See also [`zip_stored_crc32`](@ref), [`zip_test_entry`](@ref).
 """
 function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
     GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), crc)
@@ -45,14 +47,80 @@ const ZipReader = Union{ZipFileReader, ZipBufferReader}
 
 
 # Getters
+"""
+    zip_nentries(x::HasEntries)::Int
 
+Return the number of entries in `x`.
+"""
 zip_nentries(x::HasEntries)::Int = length(x.entries)
+
+"""
+    zip_name(x::HasEntries, i::Integer)::String
+
+Return the name of entry `i`.
+
+`i` can range from `1:zip_nentries(x)`
+"""
 zip_name(x::HasEntries, i::Integer)::String = String(_name_view(x, i))
+
+"""
+    zip_names(x::HasEntries)::Vector{String}
+
+Return the names of the entries.
+"""
 zip_names(x::HasEntries)::Vector{String} = String[zip_name(x,i) for i in 1:zip_nentries(x)]
+
+"""
+    zip_uncompressed_size(x::HasEntries, i::Integer)::UInt64
+
+Return the marked uncompressed size of entry `i` in number of bytes.
+
+Note: if the zip file was corrupted, this might be wrong.
+
+`i` can range from `1:zip_nentries(x)`
+"""
 zip_uncompressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].uncompressed_size
+
+"""
+    zip_compressed_size(x::HasEntries, i::Integer)::UInt64
+
+Return the marked compressed size of entry `i` in number of bytes.
+
+Note: if the zip file was corrupted, this might be wrong.
+
+`i` can range from `1:zip_nentries(x)`
+"""
 zip_compressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].compressed_size
+
+"""
+    zip_iscompressed(x::HasEntries, i::Integer)::Bool
+
+Return if entry `i` is marked as compressed.
+
+`i` can range from `1:zip_nentries(x)`
+"""
 zip_iscompressed(x::HasEntries, i::Integer)::Bool = x.entries[i].method != Store
+
+"""
+    zip_comment(x::HasEntries, i::Integer)::String
+
+Return the comment attached to entry `i`
+
+`i` can range from `1:zip_nentries(x)`
+"""
 zip_comment(x::HasEntries, i::Integer)::String = String(view(x.central_dir_buffer, x.entries[i].comment_range))
+
+"""
+    zip_stored_crc32(x::HasEntries, i::Integer)::UInt32
+
+Return the marked crc32 of entry `i` in the central directory.
+
+Note: if the zip file was corrupted, this might be wrong.
+
+`i` can range from `1:zip_nentries(x)`
+
+See also [`zip_crc32`](@ref), [`zip_test_entry`](@ref).
+"""
 zip_stored_crc32(x::HasEntries, i::Integer)::UInt32 = x.entries[i].crc32
 
 _name_view(x::HasEntries, i::Integer) = view(x.central_dir_buffer, x.entries[i].name_range)
@@ -60,11 +128,13 @@ _name_view(x::HasEntries, i::Integer) = view(x.central_dir_buffer, x.entries[i].
 """
     zip_definitely_utf8(x::HasEntries, i::Integer)::Bool
 
-Return true if entry `i` definitely uses utf8 encoding for the name.
+Return true if entry `i` name is marked as utf8 or is ascii.
 
 Otherwise, the name should probably be treated as a sequence of bytes.
 
 This package will never attempt to transcode filenames.
+
+`i` can range from `1:zip_nentries(x)`
 """
 function zip_definitely_utf8(x::HasEntries, i::Integer)::Bool
     entry = x.entries[i]
@@ -79,6 +149,8 @@ end
     zip_isdir(x::HasEntries, i::Integer)::Bool
 
 Return if entry `i` is a directory.
+
+`i` can range from `1:zip_nentries(x)`
 """
 zip_isdir(x::HasEntries, i::Integer)::Bool = _name_view(x, i)[end] == UInt8('/')
 
