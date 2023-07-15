@@ -18,6 +18,8 @@ const ByteArray = Union{
     zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
 
 Return the standard zip CRC32 checksum of data
+
+See also [`zip_stored_crc32`](@ref), [`zip_test_entry`](@ref).
 """
 function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
     GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), crc)
@@ -116,6 +118,8 @@ Return the marked crc32 of entry `i` in the central directory.
 Note: if the zip file was corrupted, this might be wrong.
 
 `i` can range from `1:zip_nentries(x)`
+
+See also [`zip_crc32`](@ref), [`zip_test_entry`](@ref).
 """
 zip_stored_crc32(x::HasEntries, i::Integer)::UInt32 = x.entries[i].crc32
 
