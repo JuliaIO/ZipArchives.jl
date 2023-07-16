@@ -901,6 +901,32 @@ function Base.show(io::IO, r::ZipBufferReader)
     show(io, r.buffer)
     print(io, ")")
 end
+function Base.show(io::IO, ::MIME"text/plain", r::ZipBufferReader)
+    topnames = Set{String}()
+    total_size::Int128 = 0
+    N = zip_nentries(r)
+    for i in 1:N
+        name = zip_name(r, i)
+        uncomp_size = zip_uncompressed_size(r, i)
+        total_size += uncomp_size
+        local p = findfirst('/', name)
+        push!(topnames, if isnothing(p)
+            name
+        else
+            name[begin:p]
+        end)
+    end
+    println(io, "$(length(r.buffer)) byte, $(N) entry $(typeof(r))")
+    println(io, "total uncompressed size: $(total_size) bytes")
+    lines, columns = displaysize(io)
+    print_names = repr.(sort!(collect(topnames)))
+    print(io, "  ")
+    if length(print_names) ≤ lines - 5
+        join(io, print_names, "\n  ")
+    else
+        join(io, [print_names[1:lines-6]; "⋮"], "\n  ")
+    end
+end
 
 
 function zip_openentry(r::ZipBufferReader, i::Int)

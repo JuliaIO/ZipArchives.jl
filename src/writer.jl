@@ -371,6 +371,8 @@ Write data as a file entry named `name`.
 Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
 `w` isn't writable after. The written data will not be compressed.
 
+See also, [`zip_newfile`](@ref)
+
 # Optional Keywords
 - `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
     Defaults to false.
