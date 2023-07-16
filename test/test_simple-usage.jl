@@ -36,6 +36,25 @@ using Test
         write(w, "I am data inside test2.txt in the zip file")
     end
 
+
+    # Read a zip file with `ZipBufferReader` This doesn't need to be closed.
+    # It also fast for multithreaded reading.
+    data = read(filename)
+    # After passing an array to ZipBufferReader
+    # make sure to never modify the array
+    r = ZipBufferReader(data)
+    @test repr(r) == "ZipArchives.ZipBufferReader($(data))"
+    @test sprint(io->(show(io, MIME"text/plain"(), r))) == """
+    478 byte, 3 entry ZipBufferReader{Vector{UInt8}}
+    total uncompressed size: 84 bytes
+      "test/"\
+    """
+    zip_nentries(r) == 3
+    @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test/test1.txt", "test/empty.txt", "test/test2.txt"]
+    zip_openentry(r, 1) do io
+        @test read(io, String) == "I am data inside test1.txt in the zip file"
+    end
+
     # Read a zip file with `zip_open_filereader`
     zip_open_filereader(filename) do r
         @test repr(r) == "ZipArchives.zip_open_filereader($(repr(filename)))"
@@ -76,17 +95,6 @@ using Test
 
     end
 
-    # Read a zip file with `ZipBufferReader` This doesn't need to be closed.
-    # It also is much faster for multithreaded reading.
-    data = read(filename)
-    # After passing an array to ZipBufferReader
-    # make sure to never modify the array
-    r = ZipBufferReader(data)
-    @test repr(r) == "ZipArchives.ZipBufferReader($(data))"
-    zip_nentries(r) == 3
-    @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test/test1.txt", "test/empty.txt", "test/test2.txt"]
-    zip_openentry(r, 1) do io
-        @test read(io, String) == "I am data inside test1.txt in the zip file"
-    end
+
 
 end
