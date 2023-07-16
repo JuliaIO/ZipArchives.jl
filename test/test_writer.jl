@@ -1,6 +1,7 @@
 using ZipArchives
 using CodecZlib
 using Test
+using OffsetArrays: Origin
 
 Debug = false
 tmp = mktempdir()
@@ -300,4 +301,24 @@ end
         end
         rm(filename)
     end
+end
+
+@testset "writing comments" begin
+    io = IOBuffer()
+    ZipWriter(io) do w
+        zip_newfile(w, "test1.txt"; comment="this is a comment")
+        write(w, "I am data inside test1.txt in the zip file")
+        zip_writefile(w, "test2.txt", b"I am data inside test2.txt in the zip file";
+            comment="this is also a comment",
+        )
+    end
+    r = ZipBufferReader(take!(io))
+    zip_test_entry(r, 1)
+    zip_test_entry(r, 2)
+    @test zip_comment(r, 1) == "this is a comment"
+    @test zip_comment(r, 2) == "this is also a comment"
+end
+
+@testset "crc32 of offset arrays" begin
+    @test zip_crc32(Origin(0)(b"hello")) == zip_crc32(b"hello")
 end
