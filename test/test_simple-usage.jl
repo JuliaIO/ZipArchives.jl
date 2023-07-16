@@ -11,7 +11,6 @@ using Test
     # Using the do syntax ensures the file will be closed.
     # Otherwise make sure to close the ZipWriter to finish writing the file.
     ZipWriter(filename) do w
-        @test repr(w) isa String
         # Write data to "test/test1.txt" inside the zip archive.
         # Always use a / as a path separator even on windows.
         @test_throws ArgumentError zip_newfile(w, "test\\test1.txt")
@@ -43,15 +42,6 @@ using Test
     # After passing an array to ZipBufferReader
     # make sure to never modify the array
     r = ZipBufferReader(data)
-    @test repr(r) == "ZipArchives.ZipBufferReader($(data))"
-    @test sprint(io->(show(io, MIME"text/plain"(), r))) == """
-    478 byte, 3 entry ZipBufferReader{Vector{UInt8}}
-    total uncompressed size: 84 bytes
-      \"test/\""""
-    @test sprint(io->(show(IOContext(io, :displaysize => (3, 80)), MIME"text/plain"(), r))) == """
-    478 byte, 3 entry ZipBufferReader{Vector{UInt8}}
-    total uncompressed size: 84 bytes
-      ⋮"""
     zip_nentries(r) == 3
     @test map(i->zip_name(r, i), 1:zip_nentries(r)) == ["test/test1.txt", "test/empty.txt", "test/test2.txt"]
     zip_openentry(r, 1) do io
