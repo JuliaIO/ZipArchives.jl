@@ -55,9 +55,10 @@ using Test
 
         @test zip_names(r) == ["test/test1.txt", "test/empty.txt", "test/test2.txt"]
         @test zip_name(r, 3) == "test/test2.txt"
-
-        zip_openentry(r, 1) do io
-            @test read(io, String) == "I am data inside test1.txt in the zip file"
+        for i in (1, BigInt(1), "test/test1.txt")
+            zip_openentry(r, i) do io
+                @test read(io, String) == "I am data inside test1.txt in the zip file"
+            end
         end
         # or the equivalent with zip_readentry
         @test zip_readentry(r, 1, String) == "I am data inside test1.txt in the zip file"

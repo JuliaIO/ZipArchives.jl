@@ -186,7 +186,7 @@ end
     @test zip_names(r) == ["\xcadU"]
     @test zip_readentry(r, 1, String) == "111222\n"
     zip_test_entry(r, 1)
-    @test ZipArchives.zip_comment(r, 1) == "\x97+I#\x05\xc5\v\xa7\xd1R\xa2\x9cPK\x06\a\xc8\x19\xc1\xaf\x94\x9caD\xbe\x94\x19BX\x12\xc6["
+    @test zip_comment(r, 1) == "\x97+I#\x05\xc5\v\xa7\xd1R\xa2\x9cPK\x06\a\xc8\x19\xc1\xaf\x94\x9caD\xbe\x94\x19BX\x12\xc6["
 
     # TestCVE202127919
     # Archive containing only the file "../test.txt"

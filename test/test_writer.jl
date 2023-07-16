@@ -1,6 +1,7 @@
 using ZipArchives
 using CodecZlib
 using Test
+using OffsetArrays: Origin
 
 Debug = false
 tmp = mktempdir()
@@ -316,4 +317,8 @@ end
     zip_test_entry(r, 2)
     @test zip_comment(r, 1) == "this is a comment"
     @test zip_comment(r, 2) == "this is also a comment"
+end
+
+@testset "crc32 of offset arrays" begin
+    @test zip_crc32(Origin(0)(b"hello")) == zip_crc32(b"hello")
 end

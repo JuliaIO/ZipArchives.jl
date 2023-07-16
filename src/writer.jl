@@ -248,11 +248,11 @@ function write_buffer(b::Vector{UInt8}, p::Int, x::Integer)::Int
     end
     sizeof(x)
 end
-function write_buffer(b::Vector{UInt8}, p::Int, x::AbstractVector{UInt8})::Int
-    copyto!(b, p, x, firstindex(x), length(x))
-    # b[p:p+length(x)-1] .= x
-    length(x)
-end
+# function write_buffer(b::Vector{UInt8}, p::Int, x::AbstractVector{UInt8})::Int
+#     copyto!(b, p, x, firstindex(x), length(x))
+#     # b[p:p+length(x)-1] .= x
+#     length(x)
+# end
 function write_buffer(b::Vector{UInt8}, p::Int, x::String)::Int
     nb = ncodeunits(x)
     data = codeunits(x)
