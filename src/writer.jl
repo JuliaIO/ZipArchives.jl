@@ -157,6 +157,7 @@ The wrapped `IO` in `w` must be seekable to use this function.
 If not see [`zip_writefile`](@ref)
 
 # Optional Keywords
+- `comment::String=""`: Entry comment, `ncodeunits(comment) ≤ typemax(UInt16)`.
 - `compress::Bool=false`: 
     If false no compression is used and other compression options are ignored.
 - `compression_level::Int=-1`:
@@ -168,7 +169,8 @@ If not see [`zip_writefile`](@ref)
 - `external_attrs::Union{Nothing,UInt32}=nothing`: Manually override the 
     external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
 """
-function zip_newfile(w::ZipWriter, name::AbstractString; 
+function zip_newfile(w::ZipWriter, name::AbstractString;
+        comment::String="",
         compress::Bool=false,
         compression_method::UInt16=Deflate,
         compression_level::Int=-1,
@@ -179,6 +181,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     zip_commitfile(w)
     namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
+    @argcheck ncodeunits(comment) ≤ typemax(UInt16)
     normed_name = nothing
     if w.check_names
         basic_name_check(namestr)
@@ -191,6 +194,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     pe = PartialEntry(;
         name=namestr,
         normed_name,
+        comment,
         w.force_zip64,
         offset=0, # place holder offset
     )
@@ -374,12 +378,14 @@ Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
 See also, [`zip_newfile`](@ref)
 
 # Optional Keywords
+- `comment::String=""`: Entry comment, `ncodeunits(comment) ≤ typemax(UInt16)`.
 - `executable::Union{Nothing,Bool}=nothing`: Set to true to mark file as executable.
     Defaults to false.
 - `external_attr::Union{Nothing,UInt32}=nothing`: Manually set the 
     external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
 """
 function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8};
+        comment::String="",
         executable::Union{Nothing,Bool}=nothing,
         external_attrs::Union{Nothing,UInt32}=nothing,
     )
@@ -387,6 +393,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     zip_commitfile(w)
     namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
+    @argcheck ncodeunits(comment) ≤ typemax(UInt16)
     normed_name=nothing
     if w.check_names
         basic_name_check(namestr)
@@ -400,6 +407,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     pe = PartialEntry(;
         name=namestr,
         normed_name,
+        comment,
         offset=0,# place holder offset
         w.force_zip64,
         compressed_size=length(data),
