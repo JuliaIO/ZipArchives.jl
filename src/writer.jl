@@ -440,8 +440,7 @@ end
 
 Return true if `new_name` matches an existing committed entry.
 
-The check is case insensitive, and 
-insensitive to leading, trailing, and repeated `/`.
+The check is insensitive to leading and repeated `/`.
 """
 zip_name_collision(w::ZipWriter, new_name::AbstractString)::Bool = zip_name_collision(w, String(new_name))
 function zip_name_collision(w::ZipWriter, new_name::String)::Bool

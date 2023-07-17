@@ -96,7 +96,8 @@ mutable struct ZipWriter{S<:IO} <: IO
     partial_entry::Union{Nothing, PartialEntry}
     closed::Bool
     force_zip64::Bool
-    used_names_lower::Set{String}
+    used_names::Set{String}
+    used_dir_names::Set{String}
     check_names::Bool
     transcoder::Union{Nothing, NoopStream{S}, DeflateCompressorStream{S}}
     function ZipWriter(io::IO;
@@ -112,6 +113,7 @@ mutable struct ZipWriter{S<:IO} <: IO
             nothing,
             false,
             force_zip64,
+            Set{String}(),
             Set{String}(),
             check_names,
             nothing,
