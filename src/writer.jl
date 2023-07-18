@@ -104,7 +104,9 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         w.entries = entries
         w.central_dir_buffer = central_dir_buffer
         if w.check_names
-            w.used_names_lower = Set{String}(norm_name(String(view(central_dir_buffer, e.name_range))) for e in entries)
+            for e in entries
+                add_name_used!(String(view(central_dir_buffer, e.name_range)), w.used_names, w.used_stripped_dir_names)
+            end
         end
         w
     catch # close io if there is an error parsing entries
@@ -182,18 +184,15 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     @argcheck ncodeunits(comment) ≤ typemax(UInt16)
-    normed_name = nothing
     if w.check_names
         basic_name_check(namestr)
         @argcheck !isnothing(external_attrs) || !endswith(namestr, "/")
-        normed_name = norm_name(namestr)
-        @argcheck normed_name ∉ w.used_names_lower
+        check_name_used(namestr, w.used_names, w.used_stripped_dir_names)
     end
     @assert !iswritable(w)
     io = w._io
     pe = PartialEntry(;
         name=namestr,
-        normed_name,
         comment,
         w.force_zip64,
         offset=0, # place holder offset
@@ -337,7 +336,7 @@ function zip_commitfile(w::ZipWriter)
         end
         entry = append_entry!(w.central_dir_buffer, pe)
         if w.check_names
-            push!(w.used_names_lower, something(pe.normed_name))
+            add_name_used!(pe.name, w.used_names, w.used_stripped_dir_names)
         end
         push!(w.entries, entry)
     end
@@ -394,19 +393,16 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     @argcheck ncodeunits(comment) ≤ typemax(UInt16)
-    normed_name=nothing
     if w.check_names
         basic_name_check(namestr)
         @argcheck !isnothing(external_attrs) || !endswith(namestr, "/")
-        normed_name = norm_name(namestr)
-        @argcheck normed_name ∉ w.used_names_lower
+        check_name_used(namestr, w.used_names, w.used_stripped_dir_names)
     end
     @assert !iswritable(w)
     io = w._io
     crc32 = zip_crc32(data)
     pe = PartialEntry(;
         name=namestr,
-        normed_name,
         comment,
         offset=0,# place holder offset
         w.force_zip64,
@@ -429,7 +425,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     @assert !iswritable(w)
     entry = append_entry!(w.central_dir_buffer, pe)
     if w.check_names
-        push!(w.used_names_lower, something(pe.normed_name))
+        add_name_used!(namestr, w.used_names, w.used_stripped_dir_names)
     end
     push!(w.entries, entry)
     nothing
@@ -438,18 +434,16 @@ end
 """
     zip_name_collision(w::ZipWriter, new_name::AbstractString)::Bool
 
-Return true if `new_name` matches an existing committed entry.
-
-The check is insensitive to leading and repeated `/`.
+Return true if `new_name` exactly matches an existing committed entry name.
 """
 zip_name_collision(w::ZipWriter, new_name::AbstractString)::Bool = zip_name_collision(w, String(new_name))
 function zip_name_collision(w::ZipWriter, new_name::String)::Bool
     if w.check_names
-        norm_name(new_name) ∈ w.used_names_lower
+        new_name ∈ w.used_names
     else
-        nname = norm_name(new_name)
+        data = codeunits(new_name)
         any(eachindex(w.entries)) do i
-            nname == norm_name(String(_name_view(w, i)))
+            data == _name_view(w, i)
         end
     end
 end
