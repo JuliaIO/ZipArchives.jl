@@ -21,18 +21,18 @@ using Test
     io = IOBuffer()
     ZipWriter(io) do w
         zip_writefile(w, "test", b"data")
-        zip_writefile(w, "test/foo", b"data")
+        zip_writefile(w, "testdir/foo", b"data")
     end
     data = take!(io)
     r = ZipBufferReader(data)
     @test repr(r) == "ZipArchives.ZipBufferReader($(data))"
     @test sprint(io->(show(io, MIME"text/plain"(), r))) == """
-    246 byte, 2 entry ZipBufferReader{Vector{UInt8}}
+    252 byte, 2 entry ZipBufferReader{Vector{UInt8}}
     total uncompressed size: 8 bytes
       "test"
-      \"test/\""""
+      \"testdir/\""""
     @test sprint(io->(show(IOContext(io, :displaysize => (3, 80)), MIME"text/plain"(), r))) == """
-    246 byte, 2 entry ZipBufferReader{Vector{UInt8}}
+    252 byte, 2 entry ZipBufferReader{Vector{UInt8}}
     total uncompressed size: 8 bytes
       ⋮"""
 end

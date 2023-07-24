@@ -72,8 +72,6 @@ end
 
 Base.@kwdef mutable struct PartialEntry
     name::String
-    "lowercase normalized name used to check for name collisions"
-    normed_name::Union{Nothing, String}
     comment::String = ""
     external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
     method::UInt16 = Store # compression method
@@ -96,7 +94,19 @@ mutable struct ZipWriter{S<:IO} <: IO
     partial_entry::Union{Nothing, PartialEntry}
     closed::Bool
     force_zip64::Bool
-    used_names_lower::Set{String}
+
+    "If checking names, this contains all committed entry names, unmodified."
+    used_names::Set{String}
+    
+    """
+    If checking names, this contains all implicit and explicit directory paths with all trailing '/'
+    removed. for example, the "/a.txt" entry name creates an explicit directory "/"
+    Which will be stored here as ""
+
+    This is because in zip land there is no concept of "root", 
+    and directories are allowed to be empty strings.
+    """
+    used_stripped_dir_names::Set{String}
     check_names::Bool
     transcoder::Union{Nothing, NoopStream{S}, DeflateCompressorStream{S}}
     function ZipWriter(io::IO;
@@ -112,6 +122,7 @@ mutable struct ZipWriter{S<:IO} <: IO
             nothing,
             false,
             force_zip64,
+            Set{String}(),
             Set{String}(),
             check_names,
             nothing,
