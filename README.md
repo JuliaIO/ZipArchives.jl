@@ -1,8 +1,8 @@
 # ZipArchives
 
 [![docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://docs.juliahub.com/ZipArchives/SGwzF)
-[![Build Status](https://github.com/medyan-dev/ZipArchives.jl/workflows/CI/badge.svg)](https://github.com/medyan-dev/ZipArchives.jl/actions)
-[![codecov](https://codecov.io/gh/medyan-dev/ZipArchives.jl/branch/main/graph/badge.svg?token=K3J0T9BZ42)](https://codecov.io/gh/medyan-dev/ZipArchives.jl)
+[![Build Status](https://github.com/JuliaIO/ZipArchives.jl/workflows/CI/badge.svg)](https://github.com/JuliaIO/ZipArchives.jl/actions)
+[![codecov](https://codecov.io/gh/JuliaIO/ZipArchives.jl/branch/main/graph/badge.svg?token=K3J0T9BZ42)](https://codecov.io/gh/JuliaIO/ZipArchives.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
 Read and write Zip archives in julia.
@@ -35,12 +35,12 @@ When writing it is important to close the writer so the central directory gets w
 
 Archives can be read from any `AbstractVector{UInt8}` containing the data of a zip archive.
 
-For example if you download this repo as a ".zip" from github https://github.com/medyan-dev/ZipArchives.jl/archive/refs/heads/main.zip you can read this README in julia.
+For example if you download this repo as a ".zip" from github https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip you can read this README in julia.
 
 ```julia
 using ZipArchives
 import Downloads
-data = take!(Downloads.download("https://github.com/medyan-dev/ZipArchives.jl/archive/refs/heads/main.zip", IOBuffer()));
+data = take!(Downloads.download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip", IOBuffer()));
 archive = ZipBufferReader(data)
 ```
 
