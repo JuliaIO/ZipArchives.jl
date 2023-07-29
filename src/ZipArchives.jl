@@ -1,25 +1,12 @@
 """
 ### ZipArchives
 
-An archive contains a list of named entries. 
-These entries represent archived files or empty directories.
-Internally there is no file system like tree structure; however,
-the entry name may have "/"s to represented a relative path.
-
-At the end of the archive there is a "central directory" of all entry names, sizes,
-and other metadata.
-
-The central directory gets parsed first when reading an archive.
-
-The central directory makes it fast to read just one random entry out of a very large archive.
-
-When writing it is important to close the writer so the central directory gets written out.
-
 ### Reading Zip archives
 
 Archives can be read from any `AbstractVector{UInt8}` containing the data of a zip archive.
 
-For example if you download this repo as a ".zip" from github https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip you can read this README in julia.
+For example if you download this repo as a ".zip" from github https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip 
+you can read the README in julia.
 
 ```julia
 using ZipArchives
@@ -28,12 +15,10 @@ data = take!(Downloads.download("https://github.com/JuliaIO/ZipArchives.jl/archi
 archive = ZipBufferReader(data)
 ```
 
-Check the names in the archive.
 ```julia
 zip_names(archive)
 ```
 
-Print this README file.
 ```julia
 zip_readentry(archive, "ZipArchives.jl-main/README.md", String) |> print
 ```
@@ -44,25 +29,15 @@ zip_readentry(archive, "ZipArchives.jl-main/README.md", String) |> print
 using ZipArchives, Test
 filename = tempname()
 ```
-Open a new zip file with `ZipWriter`
-If a file already exists at filename, it will be replaced.
-Using the do syntax ensures the file will be closed.
-Otherwise make sure to close the ZipWriter to finish writing the file.
 
 ```julia
 ZipWriter(filename) do w
-    # Write data to "test/test1.txt" inside the zip archive.
-    # Always use a / as a path separator even on windows.
     @test_throws ArgumentError zip_newfile(w, "test\\test1.txt")
-    # `zip_newfile` turns w into an IO that represents a file in the archive.
     zip_newfile(w, "test/test1.txt")
     write(w, "I am data inside test1.txt in the zip file")
 
-    # Write an empty file.
-    # After calling `newfile` there is no direct way to edit any previous files in the archive.
     zip_newfile(w, "test/empty.txt")
 
-    # Write data to "test2.txt" inside the zip file.
     zip_newfile(w, "test/test2.txt")
     write(w, "I am data inside test2.txt in the zip file")
 end
