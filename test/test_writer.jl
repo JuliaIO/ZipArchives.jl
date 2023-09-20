@@ -106,8 +106,12 @@ include("external_unzippers.jl")
                 for i in 1:zip_nentries(dir)
                     local name = zip_name(dir, i)
                     local extracted_path = joinpath(tmpout, name)
-                    @test isfile(extracted_path)
-                    @test zip_readentry(dir, i) == read(extracted_path)
+                    if !isfile(extracted_path)
+                        @error "$(readdir(tmpout)) doesn't contain $(repr(name))"
+                        @test false
+                    else
+                        @test zip_readentry(dir, i) == read(extracted_path)
+                    end
                 end
                 # Check number of extracted files match
                 local total_files = sum(walkdir(tmpout)) do (root, dirs, files)
