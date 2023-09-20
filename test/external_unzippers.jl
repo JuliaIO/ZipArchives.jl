@@ -19,10 +19,10 @@ Extract the zip file at zippath into the directory dirpath
 Use p7zip
 """
 function unzip_p7zip(zippath, dirpath)
+    # "LANG"=>"C.UTF-8" env variable is sometimes needed to get p7zip to use utf8
     # pipe output to devnull because p7zip is noisy
-    p7zip_jll.p7zip() do exe
-        run(pipeline(`$(exe) x -y -o$(dirpath) $(zippath)`, devnull))
-    end
+    # run(addenv(`$(p7zip_jll.p7zip()) x -y -o$(dirpath) $(zippath)`, "LANG"=>"C.UTF-8"))
+    run(pipeline(addenv(`$(p7zip_jll.p7zip()) x -y -o$(dirpath) $(zippath)`, "LANG"=>"C.UTF-8"), devnull))
     nothing
 end
 
@@ -31,9 +31,7 @@ Extract the zip file at zippath into the directory dirpath
 Use bsdtar from libarchive
 """
 function unzip_bsdtar(zippath, dirpath)
-    LibArchive_jll.bsdtar() do exe
-        run(`$(exe) -x -f $(zippath) -C $(dirpath)`)
-    end
+    run(`$(LibArchive_jll.bsdtar()) -x -f $(zippath) -C $(dirpath)`)
     nothing
 end
 
