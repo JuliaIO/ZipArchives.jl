@@ -38,7 +38,7 @@ jobs:
       - name: Develop packages
         run: |
           julia --project=test -e '
-            using Pkg
+            using Pkg: Pkg, PackageSpec
             Pkg.develop([PackageSpec(path=pwd())])
             Pkg.instantiate()'
       - uses: julia-actions/julia-buildpkg@v1
@@ -47,7 +47,7 @@ jobs:
       - name: Print package status
         run: |
           julia --project=test -e '
-            using InteractiveUtils
+            using InteractiveUtils: versioninfo
             versioninfo()
             using Pkg
             Pkg.status(;mode=Pkg.PKGMODE_MANIFEST)'

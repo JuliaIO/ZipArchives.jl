@@ -1,5 +1,5 @@
-using Pkg.Artifacts
-using ZipArchives
+using Pkg.Artifacts: @artifact_str
+using ZipArchives: ZipBufferReader, zip_names, zip_readentry
 
 r = ZipBufferReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
 println(length(zip_names(r)))

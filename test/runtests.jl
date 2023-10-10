@@ -1,7 +1,6 @@
-using Test
-using Random
-using ZipArchives
-import Aqua
+using Random: Random
+using ZipArchives: ZipArchives
+using Aqua: Aqua
 
 Aqua.test_all(ZipArchives)
 

@@ -1,6 +1,5 @@
-using ZipArchives
-using CodecZlib
-using Test
+include("common.jl")
+using CodecZlib: GzipCompressorStream, GzipDecompressorStream
 using OffsetArrays: Origin
 
 Debug = false

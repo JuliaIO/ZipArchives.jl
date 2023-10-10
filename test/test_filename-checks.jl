@@ -1,6 +1,4 @@
-using ZipArchives
-using Test
-using Random
+include("common.jl")
 
 @testset "check_name_used unit tests" begin
     # make sure check_name_used doesn't error with random input

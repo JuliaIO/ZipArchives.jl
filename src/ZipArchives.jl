@@ -9,9 +9,9 @@ For example if you download this repo as a ".zip" from github https://github.com
 you can read the README in julia.
 
 ```julia
-using ZipArchives
-import Downloads
-data = take!(Downloads.download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip", IOBuffer()));
+using ZipArchives: ZipBufferReader, zip_names, zip_readentry
+using Downloads: download
+data = take!(download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip", IOBuffer()));
 archive = ZipBufferReader(data)
 ```
 
@@ -26,7 +26,8 @@ zip_readentry(archive, "ZipArchives.jl-main/README.md", String) |> print
 ### Writing Zip archives
 
 ```julia
-using ZipArchives, Test
+using ZipArchives: ZipWriter, zip_newfile
+using Test: @test_throws
 filename = tempname()
 ```
 
@@ -45,7 +46,11 @@ end
 """
 module ZipArchives
 
-using PrecompileTools
+using CodecZlib: DeflateCompressorStream, DeflateDecompressorStream, DeflateCompressor
+using TranscodingStreams: TranscodingStreams, TranscodingStream, Noop, NoopStream
+using ArgCheck: @argcheck
+using Zlib_jll: Zlib_jll
+using PrecompileTools: @setup_workload, @compile_workload
 
 include("constants.jl")
 include("filename-checks.jl")

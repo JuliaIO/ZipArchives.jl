@@ -1,4 +1,3 @@
-using ArgCheck
 
 function basic_name_check(name::String)::Nothing
     @argcheck !isempty(name)

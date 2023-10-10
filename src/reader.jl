@@ -1,5 +1,3 @@
-import Zlib_jll
-
 function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     ccall((:crc32_z, Zlib_jll.libz),
         Culong, (Culong, Ptr{UInt8}, Csize_t),

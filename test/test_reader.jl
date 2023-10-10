@@ -1,10 +1,8 @@
-using ZipArchives
-using Pkg.Artifacts
-using Test
-using Base64
-using Random
-using MutatePlainDataArray
-import p7zip_jll
+include("common.jl")
+using Pkg.Artifacts: @artifact_str, ensure_artifact_installed
+using Base64: base64decode
+using MutatePlainDataArray: aref
+using p7zip_jll: p7zip_jll
 
 @testset "find_end_of_central_directory_record unit tests" begin
     find_eocd = ZipArchives.find_end_of_central_directory_record
