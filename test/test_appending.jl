@@ -1,5 +1,4 @@
-using ZipArchives
-using Test
+include("common.jl")
 
 @testset "zip_append_archive" begin
     io = IOBuffer()

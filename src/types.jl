@@ -1,7 +1,3 @@
-using CodecZlib
-using TranscodingStreams
-
-
 #=
 This is an internal type.
 Info about an entry in a zip file.

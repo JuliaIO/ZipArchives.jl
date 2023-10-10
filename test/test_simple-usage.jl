@@ -1,5 +1,22 @@
-using ZipArchives
-using Test
+using ZipArchives: 
+    ZipWriter,
+    zip_newfile,
+    zip_nentries,
+    zip_name,
+    zip_names,
+    ZipBufferReader,
+    zip_openentry,
+    zip_readentry,
+    zip_iscompressed,
+    zip_compressed_size,
+    zip_uncompressed_size,
+    zip_test_entry,
+    zip_isdir,
+    zip_isexecutablefile,
+    zip_definitely_utf8,
+    zip_open_filereader
+
+using Test: @testset, @test, @test_throws
 
 
 

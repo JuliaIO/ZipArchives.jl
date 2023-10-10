@@ -1,5 +1,3 @@
-using ArgCheck
-
 "Compression method that does no compression"
 const Store = UInt16(0)
 

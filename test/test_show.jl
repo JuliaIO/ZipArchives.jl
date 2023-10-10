@@ -1,5 +1,4 @@
-using ZipArchives
-using Test
+include("common.jl")
 
 @testset "show methods" begin
     io = IOBuffer()

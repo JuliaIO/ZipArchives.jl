@@ -1,6 +1,5 @@
-using ZipArchives
-using Base64
-using Test
+include("common.jl")
+using Base64: base64decode
 
 # These test are mostly ported from reader_test.go in https://github.com/golang/go/tree/da94586aa3767c38ccb625ac653e038bb842444a/src/archive/zip
 

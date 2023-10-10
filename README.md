@@ -38,9 +38,9 @@ Archives can be read from any `AbstractVector{UInt8}` containing the data of a z
 For example if you download this repo as a ".zip" from github https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip you can read this README in julia.
 
 ```julia
-using ZipArchives
-import Downloads
-data = take!(Downloads.download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip", IOBuffer()));
+using ZipArchives: ZipBufferReader, zip_names, zip_readentry
+using Downloads: download
+data = take!(download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip", IOBuffer()));
 archive = ZipBufferReader(data)
 ```
 
@@ -57,7 +57,8 @@ zip_readentry(archive, "ZipArchives.jl-main/README.md", String) |> print
 ### Writing Zip archives
 
 ```julia
-using ZipArchives, Test
+using ZipArchives: ZipWriter, zip_newfile
+using Test: @test_throws
 filename = tempname()
 ```
 Open a new zip file with `ZipWriter`
