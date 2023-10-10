@@ -17,6 +17,7 @@ jobs:
       matrix:
         version:
           - '1.6'
+          - '1'
           # - 'nightly'
         os:
           - ubuntu-latest
@@ -54,7 +55,7 @@ jobs:
       - name: Run tests
         run: |
           cd test && 
-          julia --project --color=yes --depwarn=yes --warn-overwrite=yes --warn-scope=yes --check-bounds=yes --code-coverage=user runtests.jl 
+          JULIA_LOAD_PATH="@" julia --project --startup-file=no --color=yes --depwarn=yes --warn-overwrite=yes --warn-scope=yes --check-bounds=yes --code-coverage=user runtests.jl 
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v3
         with:
