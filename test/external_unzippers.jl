@@ -41,7 +41,7 @@ Use unzip from unzip_jll
 """
 function unzip_unzip_jll(zippath, dirpath)
     try
-        run(`$(unzip_jll.unzip()) -qq $(zippath) -d $(dirpath)`)
+        run(`$(unzip_jll.unzip()) $(zippath) -d $(dirpath)`)
     catch
         # unzip errors if the zip file is empty for some reason
     end
@@ -83,7 +83,7 @@ Use unzip from the infamous builtin Info-ZIP
 """
 function unzip_infozip(zippath, dirpath)
     try
-        run(`unzip $(zippath) -d $(dirpath)`)
+        run(`unzip $(zippath) -qq -d $(dirpath)`)
     catch
         # unzip errors if the zip file is empty for some reason
     end
