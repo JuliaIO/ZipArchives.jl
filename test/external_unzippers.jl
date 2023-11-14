@@ -83,7 +83,7 @@ Use unzip from the infamous builtin Info-ZIP
 """
 function unzip_infozip(zippath, dirpath)
     try
-        run(`unzip -qq $(zippath) -d $(dirpath)`)
+        run(`unzip $(zippath) -d $(dirpath)`)
     catch
         # unzip errors if the zip file is empty for some reason
     end
