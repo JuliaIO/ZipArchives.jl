@@ -1,7 +1,7 @@
 include("common.jl")
 using Pkg.Artifacts: @artifact_str, ensure_artifact_installed
 using Base64: base64decode
-using MutatePlainDataArray: aref
+using Setfield: @set
 using p7zip_jll: p7zip_jll
 
 @testset "find_end_of_central_directory_record unit tests" begin
@@ -253,17 +253,18 @@ end
 
     # now try with a bad uncompressed_size
     r = ZipBufferReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
-    aref(r.entries)[1].uncompressed_size[] = 2
+    correct_entry = r.entries[1]
+    r.entries[1] = @set(correct_entry.uncompressed_size = 2)
     @test_throws ArgumentError zip_test_entry(r, 1)
     @test_throws ArgumentError zip_readentry(r, 1)
 
     # now try with a bad uncompressed_size
     r = ZipBufferReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
-    aref(r.entries)[1].uncompressed_size[] = typemax(Int64)-1
+    r.entries[1] = @set(correct_entry.uncompressed_size = typemax(Int64)-1)
     @test_throws ArgumentError zip_test_entry(r, 1)
     # @test_throws OutOfMemoryError zip_readentry(r, 1)
 
-    aref(r.entries)[1].uncompressed_size[] = 1<<30
+    r.entries[1] = @set(correct_entry.uncompressed_size = 1<<30)
     @test_throws ArgumentError zip_test_entry(r, 1)
     @test_throws ArgumentError zip_readentry(r, 1)
 
