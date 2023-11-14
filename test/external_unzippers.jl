@@ -4,6 +4,7 @@
 import ZipFile
 import p7zip_jll
 import LibArchive_jll
+import unzip_jll
 # ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
 try
     import PythonCall
@@ -20,8 +21,7 @@ Use p7zip
 function unzip_p7zip(zippath, dirpath)
     # "LANG"=>"C.UTF-8" env variable is sometimes needed to get p7zip to use utf8
     # pipe output to devnull because p7zip is noisy
-    # run(addenv(`$(p7zip_jll.p7zip()) x -y -o$(dirpath) $(zippath)`, "LANG"=>"C.UTF-8"))
-    run(pipeline(addenv(`$(p7zip_jll.p7zip()) x -y -o$(dirpath) $(zippath)`, "LANG"=>"C.UTF-8"), devnull))
+    run(pipeline(`$(p7zip_jll.p7zip()) x -y -o$(dirpath) $(zippath)`, devnull))
     nothing
 end
 
@@ -31,6 +31,19 @@ Use bsdtar from libarchive
 """
 function unzip_bsdtar(zippath, dirpath)
     run(`$(LibArchive_jll.bsdtar()) -x -f $(zippath) -C $(dirpath)`)
+    nothing
+end
+
+"""
+Extract the zip file at zippath into the directory dirpath
+Use unzip from unzip_jll
+"""
+function unzip_unzip_jll(zippath, dirpath)
+    try
+        run(`$(unzip_jll.unzip) -qq $(zippath) -d $(dirpath)`)
+    catch
+        # unzip errors if the zip file is empty for some reason
+    end
     nothing
 end
 
@@ -53,43 +66,14 @@ function unzip_python(zippath, dirpath)
 end
 
 
-# This is modified to only check for `unzip` from 
-# https://github.com/samoconnor/InfoZIP.jl/blob/1247b24dd3183e00baa7890c1a2c7f6766c3d774/src/InfoZIP.jl#L6-L14
-function have_infozip()
-    try
-        occursin(r"^UnZip.*by Info-ZIP", read(`unzip`, String))
-    catch
-        return false
-    end
-end
-
-"""
-Extract the zip file at zippath into the directory dirpath
-Use unzip from the infamous builtin Info-ZIP
-"""
-function unzip_infozip(zippath, dirpath)
-    try
-        run(`unzip -qq $(zippath) -d $(dirpath)`)
-    catch
-        # unzip errors if the zip file is empty for some reason
-    end
-    nothing
-end
-
-
 unzippers = Any[
     unzip_p7zip,
     unzip_bsdtar,
+    unzip_unzip_jll,
 ]
 
 if have_python()
     push!(unzippers, unzip_python)
 else
     @info "python not found, skipping `unzip_python` tests"
-end
-
-if have_infozip()
-    push!(unzippers, unzip_infozip)
-else
-    @info "system Info-ZIP unzip not found, skipping `unzip_infozip` tests"
 end
