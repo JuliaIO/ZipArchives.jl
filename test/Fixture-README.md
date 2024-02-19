@@ -66,10 +66,10 @@ Example jar file from https://mvnrepository.com/artifact/io.github.asakaev/leftp
 ## `ubuntu22-files.zip`
 Created with default ubuntu files program
 
-## `ubuntu22-7zip.zip
+## `ubuntu22-7zip.zip`
 Created with 7zip version 22.01 (x64)
 
-## `ubuntu22-old7zip.zip
+## `ubuntu22-old7zip.zip`
 Created with 7zip version 16.02 p7zip 16.02
 
 ## `ubuntu22-infozip.zip`
