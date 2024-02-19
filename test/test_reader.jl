@@ -158,6 +158,14 @@ end
     @test zip_names(r) == ["test"]
     zip_test_entry(r, 1)
     @test zip_readentry(r, 1, String) == "file data"
+
+    # Test zip file from comment #1 at: https://bugs.launchpad.net/ubuntu/+source/unzip/+bug/2051952
+    # See more details here: https://www.bitsgalore.org/2020/03/11/does-microsoft-onedrive-export-large-ZIP-files-that-are-corrupt
+    total_disk_num_1 = codeunits("PK\x03\x04-\0\0\0\0\0\x9dBFX\xf9\x03\xff\xe8\xff\xff\xff\xff\xff\xff\xff\xff\b\x000\0test.txtUT\t\0\x0392\xc2e92\xc2eux\v\0\x01\x04\xe8\x03\0\0\x04\xe8\x03\0\0\x01\0\x10\0#\0\0\0\0\0\0\0#\0\0\0\0\0\0\0This is just an example text file.\nPK\x01\x02\x1e\x03-\0\0\0\0\0\x9dBFX\xf9\x03\xff\xe8#\0\0\0\xff\xff\xff\xff\b\0\$\0\0\0\0\0\x01\0\0\0\xb4\x81\0\0\0\0test.txtUT\x05\0\x0392\xc2eux\v\0\x01\x04\xe8\x03\0\0\x04\xe8\x03\0\0\x01\0\b\0#\0\0\0\0\0\0\0PK\x06\x06,\0\0\0\0\0\0\0\x1e\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0Z\0\0\0\0\0\0\0y\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\xd3\0\0\0\0\0\0\0\0\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0Z\0\0\0\xff\xff\xff\xff\0\0")
+    r = ZipBufferReader(total_disk_num_1)
+    @test zip_names(r) == ["test.txt"]
+    zip_test_entry(r, 1)
+    @test zip_readentry(r, 1, String) == "This is just an example text file.\n"
 end
 
 @testset "opening entry after closed" begin
