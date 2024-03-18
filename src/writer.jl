@@ -221,7 +221,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
         throw(ArgumentError("compression_method must be Deflate or Store"))
     end
     pe.bit_flags |= level_bits
-    w.transcoder = TranscodingStream(codec, io; sharedbuf=false)
+    w.transcoder = TranscodingStream(codec, io; sharedbuf=false, stop_on_end=true)
     pe.method = real_compression_method
     
     write_local_header(io, pe)
@@ -309,7 +309,7 @@ function zip_commitfile(w::ZipWriter)
             write(transcoder, TranscodingStreams.TOKEN_END)
         finally
             # Prevent memory leak maybe.
-            TranscodingStreams.finalize(transcoder.codec)
+            close(transcoder)
         end
         cur_offset = position(w._io)
         pe.compressed_size = cur_offset - pe.offset - pe.local_header_size
@@ -357,7 +357,7 @@ function zip_abortfile(w::ZipWriter)
             write(transcoder, TranscodingStreams.TOKEN_END)
         finally
             # Prevent memory leak maybe.
-            TranscodingStreams.finalize(transcoder.codec)
+            close(transcoder)
         end
     end
     nothing
