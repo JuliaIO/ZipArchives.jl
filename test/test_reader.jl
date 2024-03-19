@@ -114,6 +114,47 @@ end
     rm(filename)
 end
 
+@testset "Different local name" begin
+    testdata = codeunits("\
+    PK\x03\x04\x14\0\0\b\0\0\0\0\0\0\xc2A\$5\x03\0\0\0\x03\0\0\0\b\0\x14\0aame.txt\
+    \x99\x99\x10\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    abc\
+    PK\x01\x02-\x03\x14\0\0\b\0\0\0\0\0\0\xc2A\$5\x03\0\0\0\x03\0\0\0\b\0\0\0\0\0\0\0\0\0\0\0\xa4\x81\0\0\0\0name.txt\
+    PK\x05\x06\0\0\0\0\x01\0\x01\x006\0\0\0=\0\0\0\0\0"
+    )
+    filename = tempname()
+    write(filename, testdata)
+    data = read(filename)
+    r = ZipBufferReader(data)
+    @test_throws ArgumentError zip_test_entry(r, 1)
+    zip_open_filereader(filename) do r
+        @test_throws ArgumentError zip_test_entry(r, 1)
+    end
+    # zip_open_filereader will close the file if it has an error while parsing.
+    # this will let the file be removed afterwards on windows.
+    rm(filename)
+end
+
+@testset "Invalid Deflated data" begin
+    testdata = codeunits("\
+    PK\x03\x04\x14\0\0\b\b\0\0\0\0\0\x8d\xef\x02\xd2\x03\0\0\0\x01\0\0\0\b\0\x14\0name.txt\
+    \x99\x99\x10\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    abc\
+    PK\x01\x02-\x03\x14\0\0\b\b\0\0\0\0\0\x8d\xef\x02\xd2\x03\0\0\0\x01\0\0\0\b\0\0\0\0\0\0\0\0\0\0\0\xa4\x81\0\0\0\0name.txt\
+    PK\x05\x06\0\0\0\0\x01\0\x01\x006\0\0\0=\0\0\0\0\0")
+    filename = tempname()
+    write(filename, testdata)
+    data = read(filename)
+    r = ZipBufferReader(data)
+    @test_throws Exception zip_test_entry(r, 1)
+    zip_open_filereader(filename) do r
+        @test_throws Exception zip_test_entry(r, 1)
+    end
+    # zip_open_filereader will close the file if it has an error while parsing.
+    # this will let the file be removed afterwards on windows.
+    rm(filename)
+end
+
 @testset "reading file with unknown compression method" begin
     # The following code was used to generate the data,
     # but for some reason lzma doesn't work on github actions
