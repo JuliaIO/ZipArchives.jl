@@ -708,6 +708,7 @@ end
 function zip_openentry(r::ZipFileReader, i::Int)::TranscodingStream
     entry::EntryInfo = r.entries[i]
     validate_entry(entry, r._fsize)
+    # prevent r._io from being closed while reading the local header
     lock(r._lock) do
         if r._open[]
             @assert r._ref_counter[] > 0 
@@ -719,28 +720,41 @@ function zip_openentry(r::ZipFileReader, i::Int)::TranscodingStream
     local_header_offset::Int64 = entry.offset
     entry_data_offset::Int64 = -1
     method = entry.method
-    Base.@lock r._lock begin
-        # read and validate local header
-        seek(r._io, local_header_offset)
-        @argcheck readle(r._io, UInt32) == 0x04034b50
-        skip(r._io, 4)
-        @argcheck readle(r._io, UInt16) == method
-        skip(r._io, 4*4)
-        local_name_len = readle(r._io, UInt16)
-        @argcheck local_name_len == length(entry.name_range)
-        extra_len = readle(r._io, UInt16)
+    try
+        Base.@lock r._lock begin
+            # read and validate local header
+            seek(r._io, local_header_offset)
+            @argcheck readle(r._io, UInt32) == 0x04034b50
+            skip(r._io, 4)
+            @argcheck readle(r._io, UInt16) == method
+            skip(r._io, 4*4)
+            local_name_len = readle(r._io, UInt16)
+            @argcheck local_name_len == length(entry.name_range)
+            extra_len = readle(r._io, UInt16)
 
-        actual_local_header_size::Int64 = 30 + extra_len + local_name_len
-        entry_data_offset = local_header_offset + actual_local_header_size
-        # make sure this doesn't overflow
-        @argcheck entry_data_offset > local_header_offset
-        @argcheck entry.compressed_size ≤ r._fsize
-        @argcheck entry_data_offset ≤ r._fsize - entry.compressed_size
+            actual_local_header_size::Int64 = 30 + extra_len + local_name_len
+            entry_data_offset = local_header_offset + actual_local_header_size
+            # make sure this doesn't overflow
+            @argcheck entry_data_offset > local_header_offset
+            @argcheck entry.compressed_size ≤ r._fsize
+            @argcheck entry_data_offset ≤ r._fsize - entry.compressed_size
 
-        @argcheck read(r._io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
-        skip(r._io, extra_len)
+            @argcheck read(r._io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
+            skip(r._io, extra_len)
+        end
+        @argcheck entry_data_offset ≥ 0
+    catch
+        # Decrement ref counter and error out if there is a issue with the local header
+        lock(r._lock) do
+            @assert r._ref_counter[] > 0 
+            r._ref_counter[] -= 1
+            if r._ref_counter[] == 0
+                @assert !r._open[]
+                close(r._io)
+            end
+        end
+        rethrow()
     end
-    @argcheck entry_data_offset ≥ 0
     base_io = ZipFileEntryReader(
         r,
         0,
