@@ -40,15 +40,14 @@ Return the minimum size of a local header for an entry.
 min_local_header_size(entry::EntryInfo)::Int64 = 30 + length(entry.name_range)
 
 """
-    const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
+    const HasEntries = Union{ZipReader, ZipWriter}
 """
-const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
+const HasEntries = Union{ZipReader, ZipWriter}
 
 """
-    const ZipReader = Union{ZipFileReader, ZipBufferReader}
+    const ZipBufferReader = ZipReader
 """
-const ZipReader = Union{ZipFileReader, ZipBufferReader}
-
+const ZipBufferReader = ZipReader
 
 # Getters
 """
@@ -587,98 +586,6 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
     entries
 end
 
-"""
-    zip_open_filereader(filename::AbstractString)::ZipFileReader
-    zip_open_filereader(f::Function, filename::AbstractString)
-
-Create a reader for a zip archive in a file at path `filename`.
-
-The file must not be modified while being read.
-
-`zip_nentries(r::ZipFileReader)::Int` returns the 
-number of entries in the archive. 
-
-`zip_names(r::ZipFileReader)::Vector{String}` returns the names of all the entries in the archive.
-
-The following get information about an entry in the archive:
-
-Entries are indexed from `1:zip_nentries(r)`
-
-1. `zip_name(r::ZipFileReader, i::Integer)::String`
-1. `zip_uncompressed_size(r::ZipFileReader, i::Integer)::UInt64`
-
-`zip_test_entry(r::ZipFileReader, i::Integer)::Nothing` 
-checks if an entry is valid and has a good checksum.
-
-Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` 
-if you are worried about data corruption.
-
-`zip_openentry` and `zip_readentry` can be used to read data from an entry.
-
-To fully close the file, close all opened entries and the parent `ZipFileReader` object.
-
-This will happen automatically if the do block method 
-is used for `zip_open_filereader` and `zip_openentry`.
-
-After closing the returned `ZipFileReader`, any opened entries 
-will remain opened and are still readable.
-
-# Multi threading
-
-The returned `ZipFileReader` object can safely be used from multiple threads; 
-however, the objects returned by `zip_openentry` 
-should only be accessed by one thread at a time.
-
-See also [`ZipBufferReader`](@ref).
-"""
-function zip_open_filereader(filename::AbstractString)::ZipFileReader
-    io_lock = ReentrantLock()
-    # I'm not sure if the lock is needed in the constructor.
-    io = open(filename; lock=false)
-    try # parse entries
-        entries, central_dir_buffer, central_dir_offset = lock(io_lock) do
-            parse_central_directory(io)
-        end
-        _ref_counter = Ref(Int64(1))
-        _open = Ref(true)
-        fsize = lock(io_lock) do
-            _ref_counter[] = 1
-            _open[] = true
-            filesize(io)
-        end
-        ZipFileReader(
-            entries,
-            central_dir_buffer,
-            central_dir_offset,
-            io,
-            _ref_counter,
-            _open,
-            io_lock,
-            fsize,
-            filename,
-        )
-    catch # close io if there is an error parsing entries
-        close(io)
-        rethrow()
-    end
-end
-function zip_open_filereader(f::Function, filename::AbstractString)
-    r = zip_open_filereader(filename)
-    try
-        f(r)
-    finally
-        close(r)
-    end
-end
-
-function Base.show(io::IO, r::ZipFileReader)
-    print(io, "ZipArchives.zip_open_filereader(")
-    print(io, repr(r._name))
-    print(io, ")")
-end
-
-
-Base.isopen(r::ZipFileReader)::Bool = r._open[]
 
 #=
 Throw an ArgumentError if entry cannot be extracted.
@@ -705,215 +612,51 @@ function validate_entry(entry::EntryInfo, fsize::Int64)
     nothing
 end
 
-function zip_openentry(r::ZipFileReader, i::Int)::TranscodingStream
-    entry::EntryInfo = r.entries[i]
-    validate_entry(entry, r._fsize)
-    # prevent r._io from being closed while reading the local header
-    lock(r._lock) do
-        if r._open[]
-            @assert r._ref_counter[] > 0 
-            r._ref_counter[] += 1
-        else
-            throw(ArgumentError("ZipFileReader is closed"))
-        end
-    end
-    local_header_offset::Int64 = entry.offset
-    entry_data_offset::Int64 = -1
-    method = entry.method
-    try
-        Base.@lock r._lock begin
-            # read and validate local header
-            seek(r._io, local_header_offset)
-            @argcheck readle(r._io, UInt32) == 0x04034b50
-            skip(r._io, 4)
-            @argcheck readle(r._io, UInt16) == method
-            skip(r._io, 4*4)
-            local_name_len = readle(r._io, UInt16)
-            @argcheck local_name_len == length(entry.name_range)
-            extra_len = readle(r._io, UInt16)
-
-            actual_local_header_size::Int64 = 30 + extra_len + local_name_len
-            entry_data_offset = local_header_offset + actual_local_header_size
-            # make sure this doesn't overflow
-            @argcheck entry_data_offset > local_header_offset
-            @argcheck entry.compressed_size ≤ r._fsize
-            @argcheck entry_data_offset ≤ r._fsize - entry.compressed_size
-
-            @argcheck read(r._io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
-            skip(r._io, extra_len)
-        end
-        @argcheck entry_data_offset ≥ 0
-    catch
-        # Decrement ref counter and error out if there is a issue with the local header
-        lock(r._lock) do
-            @assert r._ref_counter[] > 0 
-            r._ref_counter[] -= 1
-            if r._ref_counter[] == 0
-                @assert !r._open[]
-                close(r._io)
-            end
-        end
-        rethrow()
-    end
-    base_io = ZipFileEntryReader(
-        r,
-        0,
-        -1,
-        entry_data_offset,
-        entry.crc32,
-        entry.compressed_size,
-        Ref(true),
-    )
-    @assert base_io.compressed_size ≥ 0
-    @assert base_io.offset ≥ 0
-    @assert base_io.compressed_size + base_io.offset ≥ 0
-    try
-        if method == Store
-            return NoopStream(base_io)
-        elseif method == Deflate
-            return DeflateDecompressorStream(base_io)
-        else
-            error("unknown compression method $method. Only Deflate and Store are supported.")
-        end
-    catch
-        close(base_io)
-        rethrow()
-    end
-end
-
-# Readable IO interface for ZipFileEntryReader
-Base.isopen(io::ZipFileEntryReader)::Bool = io._open[]
-
-Base.bytesavailable(io::ZipFileEntryReader)::Int64 = io.compressed_size - io.p
-
-Base.iswritable(io::ZipFileEntryReader)::Bool = false
-
-Base.eof(io::ZipFileEntryReader)::Bool = iszero(bytesavailable(io))
-
-function Base.unsafe_read(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)::Nothing
-    @argcheck isopen(io)
-    n_real::UInt = min(n, bytesavailable(io))
-    r = io.r
-    read_start = io.offset+io.p
-    @assert read_start > 0
-    lock(r._lock) do
-        seek(r._io, read_start)
-        unsafe_read(r._io, p, n_real)
-    end
-    io.p += n_real
-    @assert io.p ≤ io.compressed_size
-    if n_real != n
-        @assert eof(io)
-        throw(EOFError())
-    end
-    nothing
-end
-
-# These functions were added to make JET happy
-# They should never actually get called.
-function Base.read(io::ZipFileEntryReader, ::Type{UInt8})
-    error("ZipFileEntryReader does not support byte I/O")
-end
-function Base.unsafe_write(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)
-    throw(ArgumentError("ZipFileEntryReader not writable"))
-end
-
-Base.position(io::ZipFileEntryReader)::Int64 = io.p
-
-function Base.seek(io::ZipFileEntryReader, n::Integer)::ZipFileEntryReader
-    @argcheck Int64(n) ∈ Int64(0):io.compressed_size
-    io.p = Int64(n)
-    @assert io.p ≤ io.compressed_size
-    return io
-end
-
-function Base.seekend(io::ZipFileEntryReader)::ZipFileEntryReader
-    io.p = io.compressed_size
-    @assert io.p ≤ io.compressed_size
-    return io
-end
-
-# Close will only actually close the internal io
-# when all ZipFileEntryReader and ZipFileReader referencing the io
-# call close.
-function Base.close(io::ZipFileEntryReader)::Nothing
-    if isopen(io)
-        io._open[] = false
-        io.p = io.compressed_size
-        r = io.r
-        lock(r._lock) do
-            @assert r._ref_counter[] > 0 
-            r._ref_counter[] -= 1
-            if r._ref_counter[] == 0
-                @assert !r._open[]
-                close(r._io)
-            end
-        end
-    end
-    nothing
-end
-
-function Base.close(r::ZipFileReader)::Nothing
-    if isopen(r)
-        lock(r._lock) do
-            if r._open[]
-                r._open[] = false
-                @assert r._ref_counter[] > 0 
-                r._ref_counter[] -= 1
-                if r._ref_counter[] == 0
-                    close(r._io)
-                end
-            end
-        end
-    end
-    nothing
-end
-
 
 """
-    struct ZipBufferReader{T<:AbstractVector{UInt8}}
-    ZipBufferReader(buffer::AbstractVector{UInt8})
+    struct ZipReader{T<:AbstractVector{UInt8}}
+    ZipReader(buffer::AbstractVector{UInt8})
 
 Create a reader for a zip archive in `buffer`.
 
 The array must not be modified while being read.
 
-`zip_nentries(r::ZipBufferReader)::Int` returns the 
+`zip_nentries(r::ZipReader)::Int` returns the 
 number of entries in the archive. 
 
-`zip_names(r::ZipBufferReader)::Vector{String}` returns the names of all the entries in the archive.
+`zip_names(r::ZipReader)::Vector{String}` returns the names of all the entries in the archive.
 
 The following get information about an entry in the archive:
 
 Entries are indexed from `1:zip_nentries(r)`
 
-1. `zip_name(r::ZipBufferReader, i::Integer)::String`
-1. `zip_uncompressed_size(r::ZipBufferReader, i::Integer)::UInt64`
+1. `zip_name(r::ZipReader, i::Integer)::String`
+1. `zip_uncompressed_size(r::ZipReader, i::Integer)::UInt64`
 
-`zip_test_entry(r::ZipBufferReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
+`zip_test_entry(r::ZipReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
 
 `zip_openentry` and `zip_readentry` can be used to read data from an entry.
 
-A `ZipBufferReader` object does not need to be closed, and cannot be closed.
+A `ZipReader` object does not need to be closed, and cannot be closed.
 
 # Multi threading
 
-The returned `ZipBufferReader` object can safely be used from multiple threads; 
+The returned `ZipReader` object can safely be used from multiple threads; 
 however, the streams returned by `zip_openentry` 
 should only be accessed by one thread at a time.
 """
-function ZipBufferReader(buffer::AbstractVector{UInt8})
+function ZipReader(buffer::AbstractVector{UInt8})
     io = IOBuffer(buffer)
     entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
-    ZipBufferReader{typeof(buffer)}(entries, central_dir_buffer, central_dir_offset, buffer)
+    ZipReader{typeof(buffer)}(entries, central_dir_buffer, central_dir_offset, buffer)
 end
 
-function Base.show(io::IO, r::ZipBufferReader)
-    print(io, "ZipArchives.ZipBufferReader(")
+function Base.show(io::IO, r::ZipReader)
+    print(io, "ZipArchives.ZipReader(")
     show(io, r.buffer)
     print(io, ")")
 end
-function Base.show(io::IO, ::MIME"text/plain", r::ZipBufferReader)
+function Base.show(io::IO, ::MIME"text/plain", r::ZipReader)
     topnames = Set{String}()
     total_size::Int128 = 0
     N = zip_nentries(r)
@@ -941,7 +684,7 @@ function Base.show(io::IO, ::MIME"text/plain", r::ZipBufferReader)
 end
 
 
-function zip_openentry(r::ZipBufferReader, i::Int)
+function zip_openentry(r::ZipReader, i::Int)
     fsize::Int64 = length(r.buffer)
     entry::EntryInfo = r.entries[i]
     compressed_size::Int64 = entry.compressed_size

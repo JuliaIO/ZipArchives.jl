@@ -7,15 +7,16 @@ include("common.jl")
             zip_writefile(w,"$i",codeunits("$(-i)"))
         end
     end
-    zip_open_filereader(filename) do r
-        @test zip_nentries(r) == N
-        for i in 1:N
-            @test zip_name(r, i) == "$(i)"
-            zip_openentry(r, i) do file
-                @test read(file, String) == "$(-i)"
-            end
+    d = mmap(filename)
+    r = ZipReader(d)
+    @test zip_nentries(r) == N
+    for i in 1:N
+        @test zip_name(r, i) == "$(i)"
+        zip_openentry(r, i) do file
+            @test read(file, String) == "$(-i)"
         end
     end
+    finalize(d)
     rm(filename)
 end
 
@@ -31,15 +32,11 @@ end
             write(w, x)
         end
     end
-    zip_open_filereader(filename) do r
-        @test zip_nentries(r) == 1
-        zip_test_entry(r, 1)
-    end
     data = read(filename)
     rm(filename)
-    r2 = ZipBufferReader(data)
-    @test zip_nentries(r2) == 1
-    zip_test_entry(r2, 1)
+    r = ZipReader(data)
+    @test zip_nentries(r) == 1
+    zip_test_entry(r, 1)
 end
 
 @testset "large offsets" begin
@@ -50,13 +47,14 @@ end
             zip_writefile(w,"$i", x)
         end
     end
-    zip_open_filereader(filename) do r
-        @test zip_nentries(r) == 2^13
-        for i in 1:2^13
-            @test zip_name(r, i) == "$(i)"
-            zip_test_entry(r, i)
-        end
+    d = mmap(filename)
+    r = ZipReader(d)
+    @test zip_nentries(r) == 2^13
+    for i in 1:2^13
+        @test zip_name(r, i) == "$(i)"
+        zip_test_entry(r, i)
     end
+    finalize(d)
     rm(filename)
 end
 
@@ -68,12 +66,13 @@ end
             zip_writefile(w,"$i", x)
         end
     end
-    zip_open_filereader(filename) do r
-        @test zip_nentries(r) == 2^16
-        for i in 1:2^16
-            @test zip_name(r, i) == "$(i)"
-            zip_test_entry(r, i)
-        end
+    d = mmap(filename)
+    r = ZipReader(d)
+    @test zip_nentries(r) == 2^16
+    for i in 1:2^16
+        @test zip_name(r, i) == "$(i)"
+        zip_test_entry(r, i)
     end
+    finalize(d)
     rm(filename)
 end

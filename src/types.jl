@@ -24,41 +24,7 @@ struct EntryInfo
     comment_range::UnitRange{Int}
 end
 
-"""
-    struct ZipFileReader
-
-Represents a zip archive file reader returned by [`zip_open_filereader`](@ref) 
-"""
-struct ZipFileReader
-    entries::Vector{EntryInfo}
-    central_dir_buffer::Vector{UInt8}
-    central_dir_offset::Int64
-    _io::IOStream
-    _ref_counter::Base.RefValue{Int64}
-    _open::Base.RefValue{Bool}
-    _lock::ReentrantLock
-    _fsize::Int64
-    _name::String
-end
-
-#=
-This is an internal type.
-It reads the raw possibly compressed bytes.
-It should only be exposed wrapped in a 
-`TranscodingStream`
-=#
-mutable struct ZipFileEntryReader <: IO
-    r::ZipFileReader
-    p::Int64
-    mark::Int64
-    offset::Int64
-    crc32::UInt32
-    compressed_size::Int64
-    _open::Base.RefValue{Bool}
-end
-
-
-struct ZipBufferReader{T<:AbstractVector{UInt8}}
+struct ZipReader{T<:AbstractVector{UInt8}}
     entries::Vector{EntryInfo}
     central_dir_buffer::Vector{UInt8}
     central_dir_offset::Int64

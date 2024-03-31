@@ -99,25 +99,24 @@ include("external_unzippers.jl")
         mktempdir() do tmpout
             # Unzip into an output directory
             unzipper(zippath, tmpout)
-            # Read zippath with ZipFileReader
+            # Read zippath with ZipReader
             # Check file names and data match
-            zip_open_filereader(zippath) do dir
-                for i in 1:zip_nentries(dir)
-                    local name = zip_name(dir, i)
-                    local extracted_path = joinpath(tmpout, name)
-                    if !isfile(extracted_path)
-                        @error "$(readdir(tmpout)) doesn't contain $(repr(name))"
-                        @test false
-                    else
-                        @test zip_readentry(dir, i) == read(extracted_path)
-                    end
+            dir = ZipReader(read(zippath))
+            for i in 1:zip_nentries(dir)
+                local name = zip_name(dir, i)
+                local extracted_path = joinpath(tmpout, name)
+                if !isfile(extracted_path)
+                    @error "$(readdir(tmpout)) doesn't contain $(repr(name))"
+                    @test false
+                else
+                    @test zip_readentry(dir, i) == read(extracted_path)
                 end
-                # Check number of extracted files match
-                local total_files = sum(walkdir(tmpout)) do (root, dirs, files)
-                    length(files)
-                end
-                @test zip_nentries(dir) == total_files
             end
+            # Check number of extracted files match
+            local total_files = sum(walkdir(tmpout)) do (root, dirs, files)
+                length(files)
+            end
+            @test zip_nentries(dir) == total_files
         end
     end
 end
@@ -159,11 +158,10 @@ end
         zip_commitfile(w)
         @test zip_nentries(w) == 1
         close(w)
-        zip_open_filereader(filename) do r
-            @test zip_names(r) == ["good_file"]
-            zip_openentry(r, 1) do file
-                @test read(file, String) == "sqrt(1.0): $(sqrt(1.0))"
-            end
+        r = ZipReader(read(filename))
+        @test zip_names(r) == ["good_file"]
+        zip_openentry(r, 1) do file
+            @test read(file, String) == "sqrt(1.0): $(sqrt(1.0))"
         end
     end
 end
@@ -190,7 +188,7 @@ end
     zip_newfile(w, "weird thing"; executable=true, external_attrs=UInt32(0))
     close(w)
     seekstart(io)
-    r = ZipBufferReader(read(io))
+    r = ZipReader(read(io))
     @test zip_names(r) == ["empty_dir/", "symlink_entry", "script.sh", "script2.sh", "weird thing"]
     @test zip_isdir(r, 1)
     @test zip_isdir(r, "empty_dir/")
@@ -238,9 +236,9 @@ end
         end
         close(layer1)
         out_data = take!(out)
-        r1 = ZipBufferReader(out_data)
+        r1 = ZipReader(out_data)
         zip_openentry(r1, 1) do entryio
-            r2 = ZipBufferReader(read(entryio))
+            r2 = ZipReader(read(entryio))
             @test zip_names(r2) == ["inner2.txt"]
             zip_openentry(r2, 1) do innerio
                 @test read(innerio, String) == "inner2 text"
@@ -265,11 +263,10 @@ end
             write(w, "inner4 text")
             @test_throws ArgumentError zip_commitfile(w)
         end
-        zip_open_filereader(filename) do r
-            @test zip_names(r) == ["inner2.txt"]
-            zip_openentry(r, 1) do entryio
-                @test read(entryio, String) == "inner2 text"
-            end
+        r = ZipReader(read(filename))
+        @test zip_names(r) == ["inner2.txt"]
+        zip_openentry(r, 1) do entryio
+            @test read(entryio, String) == "inner2 text"
         end
 
         # To avoid this call seekend before creating the zipwriter
@@ -298,7 +295,7 @@ end
         file = GzipDecompressorStream(open(filename))
         out_data = read(file)
         close(file)
-        r = ZipBufferReader(out_data)
+        r = ZipReader(out_data)
         @test zip_names(r) == ["inner2.txt"]
         zip_openentry(r, 1) do entryio
             @test read(entryio, String) == "inner2 text"
@@ -316,7 +313,7 @@ end
             comment="this is also a comment",
         )
     end
-    r = ZipBufferReader(take!(io))
+    r = ZipReader(take!(io))
     zip_test_entry(r, 1)
     zip_test_entry(r, 2)
     @test zip_comment(r, 1) == "this is a comment"
