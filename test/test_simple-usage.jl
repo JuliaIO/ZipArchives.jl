@@ -52,8 +52,7 @@ using Test: @testset, @test, @test_throws
     end
 
 
-    # Read a zip file with `ZipReader` This doesn't need to be closed.
-    # It also fast for multithreaded reading.
+    # Read a zip file with `ZipReader`.
     data = read(filename)
     # After passing an array to ZipReader
     # make sure to never modify the array
