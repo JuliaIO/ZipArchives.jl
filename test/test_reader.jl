@@ -103,15 +103,8 @@ end
 
 @testset "reading invalid files" begin
     testdata = joinpath(@__DIR__,"examples from go/testdata/")
-    invalid_file = testdata*"test-trailing-junk.zip"
-    filename = tempname()
-    cp(invalid_file, filename)
-    data = read(filename)
-    @test_throws ArgumentError ZipBufferReader(data)
-    @test_throws ArgumentError r = zip_open_filereader(filename)
-    # zip_open_filereader will close the file if it has an error while parsing.
-    # this will let the file be removed afterwards on windows.
-    rm(filename)
+    invalid_file = read(testdata*"test-trailing-junk.zip")
+    @test_throws ArgumentError ZipReader(invalid_file)
 end
 
 @testset "Different local name" begin
@@ -122,18 +115,8 @@ end
     "PK\x01\x02-\x03\x14\0\0\b\0\0\0\0\0\0\xc2A\$5\x03\0\0\0\x03\0\0\0\b\0\0\0\0\0\0\0\0\0\0\0\xa4\x81\0\0\0\0name.txt"*
     "PK\x05\x06\0\0\0\0\x01\0\x01\x006\0\0\0=\0\0\0\0\0"
     )
-    filename = tempname()
-    write(filename, testdata)
-    data = read(filename)
-    r = ZipBufferReader(data)
+    r = ZipReader(testdata)
     @test_throws ArgumentError zip_test_entry(r, 1)
-    zip_open_filereader(filename) do r
-        @test_throws ArgumentError zip_test_entry(r, 1)
-        @test r._ref_counter[] == 1
-    end
-    # zip_open_filereader will close the file if it has an error while parsing.
-    # this will let the file be removed afterwards on windows.
-    rm(filename)
 end
 
 @testset "Invalid Deflated data" begin
@@ -144,18 +127,8 @@ end
     "PK\x01\x02-\x03\x14\0\0\b\b\0\0\0\0\0\x8d\xef\x02\xd2\x03\0\0\0\x01\0\0\0\b\0\0\0\0\0\0\0\0\0\0\0\xa4\x81\0\0\0\0name.txt"*
     "PK\x05\x06\0\0\0\0\x01\0\x01\x006\0\0\0=\0\0\0\0\0"
     )
-    filename = tempname()
-    write(filename, testdata)
-    data = read(filename)
-    r = ZipBufferReader(data)
+    r = ZipReader(testdata)
     @test_throws Exception zip_test_entry(r, 1)
-    zip_open_filereader(filename) do r
-        @test_throws Exception zip_test_entry(r, 1)
-        @test r._ref_counter[] == 1
-    end
-    # zip_open_filereader will close the file if it has an error while parsing.
-    # this will let the file be removed afterwards on windows.
-    rm(filename)
 end
 
 @testset "reading file with unknown compression method" begin
@@ -172,20 +145,11 @@ end
     # data_b64 = base64encode(read(filename))
     data_b64 = "UEsDBD8AAgAOAHJb0FaLksVmIgAAABAAAAAJAAAAbHptYV9kYXRhCQQFAF0AAIAAADoaCWd+rnMR0beE5IbQKkMGbV//6/YgAFBLAQI/AD8AAgAOAHJb0FaLksVmIgAAABAAAAAJAAAAAAAAAAAAAACAAQAAAABsem1hX2RhdGFQSwUGAAAAAAEAAQA3AAAASQAAAAAA"
     data = base64decode(data_b64)
-    filename = tempname()
-    write(filename, data)
-    r = ZipBufferReader(data)
+    r = ZipReader(data)
     @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_test_entry(r, 1)
     @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_openentry(r, 1)
     @test zip_iscompressed(r, 1)
     @test zip_names(r) == ["lzma_data"]
-    zip_open_filereader(filename) do r
-        @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_test_entry(r, 1)
-        @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_openentry(r, 1)
-        @test zip_iscompressed(r, 1)
-        @test zip_names(r) == ["lzma_data"]
-    end
-    rm(filename)
 end
 
 @testset "reading file with zip64 disk number" begin
@@ -194,11 +158,11 @@ end
     disk_num_ffff = b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file dataPK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x1c\0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x18\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0N\0\0\0\0\0\0\0?\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\x8d\0\0\0\0\0\0\0\x01\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0N\0\0\0?\0\0\0\0\0"
     disk_num_1 = b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file dataPK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0 \0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x1c\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x01\0\0\0PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0R\0\0\0\0\0\0\0?\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\x91\0\0\0\0\0\0\0\x01\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0?\0\0\0\0\0"
     disk_num_0 = b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file dataPK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0 \0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x1c\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0R\0\0\0\0\0\0\0?\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\x91\0\0\0\0\0\0\0\x01\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0?\0\0\0\0\0"
-    @test_throws ArgumentError ZipBufferReader(invalid_data1)
-    @test_throws ArgumentError ZipBufferReader(invalid_data2)
-    @test_throws ArgumentError ZipBufferReader(disk_num_ffff)
-    @test_throws ArgumentError ZipBufferReader(disk_num_1)
-    r = ZipBufferReader(disk_num_0)
+    @test_throws ArgumentError ZipReader(invalid_data1)
+    @test_throws ArgumentError ZipReader(invalid_data2)
+    @test_throws ArgumentError ZipReader(disk_num_ffff)
+    @test_throws ArgumentError ZipReader(disk_num_1)
+    r = ZipReader(disk_num_0)
     @test zip_names(r) == ["test"]
     zip_test_entry(r, 1)
     @test zip_readentry(r, 1, String) == "file data"
@@ -206,42 +170,21 @@ end
     # Test zip file from comment #1 at: https://bugs.launchpad.net/ubuntu/+source/unzip/+bug/2051952
     # See more details here: https://www.bitsgalore.org/2020/03/11/does-microsoft-onedrive-export-large-ZIP-files-that-are-corrupt
     total_disk_num_1 = codeunits("PK\x03\x04-\0\0\0\0\0\x9dBFX\xf9\x03\xff\xe8\xff\xff\xff\xff\xff\xff\xff\xff\b\x000\0test.txtUT\t\0\x0392\xc2e92\xc2eux\v\0\x01\x04\xe8\x03\0\0\x04\xe8\x03\0\0\x01\0\x10\0#\0\0\0\0\0\0\0#\0\0\0\0\0\0\0This is just an example text file.\nPK\x01\x02\x1e\x03-\0\0\0\0\0\x9dBFX\xf9\x03\xff\xe8#\0\0\0\xff\xff\xff\xff\b\0\$\0\0\0\0\0\x01\0\0\0\xb4\x81\0\0\0\0test.txtUT\x05\0\x0392\xc2eux\v\0\x01\x04\xe8\x03\0\0\x04\xe8\x03\0\0\x01\0\b\0#\0\0\0\0\0\0\0PK\x06\x06,\0\0\0\0\0\0\0\x1e\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0Z\0\0\0\0\0\0\0y\0\0\0\0\0\0\0PK\x06\a\0\0\0\0\xd3\0\0\0\0\0\0\0\0\0\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0Z\0\0\0\xff\xff\xff\xff\0\0")
-    r = ZipBufferReader(total_disk_num_1)
+    r = ZipReader(total_disk_num_1)
     @test zip_names(r) == ["test.txt"]
     zip_test_entry(r, 1)
     @test zip_readentry(r, 1, String) == "This is just an example text file.\n"
 end
 
-@testset "opening entry after closed" begin
-    testdata = joinpath(@__DIR__,"examples from go/testdata/")
-    ref_file = testdata*"zip64.zip"
-    filename = tempname()
-    cp(ref_file, filename)
-    r = zip_open_filereader(filename)
-    io1 = zip_openentry(r, 1)
-    close(r)
-    # data can still be read after `r` is closed
-    @test read(io1, String) == "This small file is in ZIP64 format.\n"
-    @test eof(io1)
-    @test_throws EOFError read(io1, Int)
-    # but new entries cannot be opened.
-    @test_throws ArgumentError("ZipFileReader is closed") io2 = zip_openentry(r, 1)
-    # make sure to close all open entry readers and the ZipFileReader
-    close(io1)
-    @test_throws Exception read(io1, String)
-    rm(filename)
-end
-
 @testset "seeking uncompressed entry" begin
     # Uncompressed entries should be seekable.
-    filename = tempname()
-    ZipWriter(filename) do w
+    sink = IOBuffer()
+    ZipWriter(sink) do w
         zip_writefile(w, "test.txt", b"This small file is in STORE format.\n")
     end
 
-    r = zip_open_filereader(filename)
+    r = ZipReader(take!(sink))
     io = zip_openentry(r, 1)
-    close(r)
     @test !zip_iscompressed(r, 1)
     @test position(io) == 0
     @test read(io, String) == "This small file is in STORE format.\n"
@@ -260,7 +203,6 @@ end
     @test eof(io)
     @test read(io, String) == ""
     close(io)
-    rm(filename)
 end
 
 @testset "reading fixture" begin
@@ -269,7 +211,7 @@ end
     for file in readdir(fixture_path; join=true)
         mktempdir() do tmpout
             data = read(file)
-            r = ZipBufferReader(data)
+            r = ZipReader(data)
             p7zip_jll.p7zip() do exe
                 run(pipeline(`$(exe) x -y -o$(tmpout) $(file)`, devnull))
             end
@@ -295,7 +237,7 @@ end
     data = take!(io)
     # mess up file data
     data[60] = 0x03
-    r = ZipBufferReader(data)
+    r = ZipReader(data)
     @test_throws ArgumentError zip_test_entry(r, 1)
     @test_throws ArgumentError zip_readentry(r, 1)
     @test_throws ArgumentError zip_readentry(r, 1, String)
@@ -304,14 +246,14 @@ end
     @test zip_readentry(r, 1, Char) == 'K'
 
     # now try with a bad uncompressed_size
-    r = ZipBufferReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
+    r = ZipReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
     correct_entry = r.entries[1]
     r.entries[1] = @set(correct_entry.uncompressed_size = 2)
     @test_throws ArgumentError zip_test_entry(r, 1)
     @test_throws ArgumentError zip_readentry(r, 1)
 
     # now try with a bad uncompressed_size
-    r = ZipBufferReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
+    r = ZipReader(read(joinpath(artifact"fixture", "fixture", "ubuntu22-7zip.zip")))
     r.entries[1] = @set(correct_entry.uncompressed_size = typemax(Int64)-1)
     @test_throws ArgumentError zip_test_entry(r, 1)
     # @test_throws OutOfMemoryError zip_readentry(r, 1)
@@ -323,7 +265,9 @@ end
 end
 
 function rewrite_zip(old::AbstractString, new::AbstractString)
-    zip_open_filereader(old) do r
+    d = mmap(old)
+    try
+        r = ZipReader(d)
         ZipWriter(new) do w
             for i in 1:zip_nentries(r)
                 name = zip_name(r, i)
@@ -342,5 +286,7 @@ function rewrite_zip(old::AbstractString, new::AbstractString)
                 # zip_commitfile(w)
             end
         end
+    finally
+        finalize(d)
     end
 end

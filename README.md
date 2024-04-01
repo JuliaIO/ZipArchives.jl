@@ -38,10 +38,10 @@ Archives can be read from any `AbstractVector{UInt8}` containing the data of a z
 For example if you download this repo as a ".zip" from github https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip you can read this README in julia.
 
 ```julia
-using ZipArchives: ZipBufferReader, zip_names, zip_readentry
+using ZipArchives: ZipReader, zip_names, zip_readentry
 using Downloads: download
 data = take!(download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip", IOBuffer()));
-archive = ZipBufferReader(data)
+archive = ZipReader(data)
 ```
 
 Check the names in the archive.
@@ -119,6 +119,7 @@ ZipArchives currently has the following limitations compared to ZipFile:
 1. No way to specify the modification time, times are set to zero dos time.
 2. No `flush` function for `ZipWriter`. `close` and `zip_append_archive` can be used instead.
 3. Requires at least Julia 1.6.
+4. No way to read an archive from an `IOStream`, `mmap` can be used instead.
 
 
 
