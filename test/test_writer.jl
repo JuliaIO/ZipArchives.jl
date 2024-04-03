@@ -306,6 +306,15 @@ end
             @test read(entryio, String) == "inner2 text"
         end
     end
+    @testset "maxsize IOBuffer" begin
+        io = IOBuffer(;maxsize=10)
+        # TODO fix writing to IOBuffer(;append=true)
+        @test_throws ArgumentError ZipWriter(io) do w
+            zip_newfile(w, "inner.txt")
+            write(w, "inner most text")
+        end
+        @test_throws ArgumentError ZipReader(take!(io))
+    end
     @testset "GzipCompressorStream" begin
         filename = tempname()
         ZipWriter(GzipCompressorStream(open(filename; write=true)); own_io=true) do w
