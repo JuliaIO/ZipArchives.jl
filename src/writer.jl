@@ -177,6 +177,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     )
     @argcheck isopen(w)
     zip_commitfile(w)
+    w._io.bad && throw_bad_io()
     namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     @argcheck ncodeunits(comment) ≤ typemax(UInt16)
