@@ -83,7 +83,7 @@ mutable struct ZipWriter{S<:IO} <: IO
             check_names::Bool=true,
             own_io::Bool=false,
             force_zip64::Bool=false,
-            offset::Int64=0,
+            offset::Int64=Int64(0),
         )
         new{typeof(io)}(
             WriteOffsetTracker(io, false, offset),

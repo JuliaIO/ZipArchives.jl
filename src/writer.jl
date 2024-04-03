@@ -68,7 +68,7 @@ end
 
 function Base.show(io::IO, w::ZipWriter)
     print(io, "ZipArchives.ZipWriter(")
-    show(io, w._io)
+    show(io, w._io.io)
     print(io, ")")
 end
 
@@ -96,7 +96,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
             truncate(io, central_dir_offset)
         end
         seekend(io)
-        w = ZipWriter(io; offset=position(io), zip_kwargs...)
+        w = ZipWriter(io; offset=Int64(position(io)), zip_kwargs...)
         w.entries = entries
         w.central_dir_buffer = central_dir_buffer
         if w.check_names
@@ -259,6 +259,7 @@ end
 
 
 function assert_writeable(w::ZipWriter)
+    w._io.bad && throw_bad_io()
     if !iswritable(w)
         if isopen(w)
             throw(ArgumentError("ZipWriter not writable, call zip_newfile first"))
@@ -275,6 +276,7 @@ Base.isopen(w::WriteOffsetTracker) = !w.bad
 Base.close(w::WriteOffsetTracker) = nothing # this should never be called
 Base.isreadable(w::WriteOffsetTracker) = false
 
+# all writes to the underlying io go through this function.
 function Base.unsafe_write(w::WriteOffsetTracker, p::Ptr{UInt8}, n::UInt)::Int
     (n > typemax(Int)) && throw(ArgumentError("too many bytes. Tried to write $n bytes"))
     (w.offset < 0) && throw(ArgumentError("initial offset was negative"))
