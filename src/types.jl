@@ -48,8 +48,16 @@ Base.@kwdef mutable struct PartialEntry
     local_header_size::Int64 = 50 + ncodeunits(name)
 end
 
+# Internal type to keep track of ZipWriter IO offsets and error state.
+# inspired by https://github.com/madler/zipflow/blob/main/zipflow.c
+mutable struct WriteOffsetTracker{S<:IO} <: IO
+    io::S
+    bad::Bool
+    offset::Int64
+end
+
 mutable struct ZipWriter{S<:IO} <: IO
-    _io::S
+    _io::WriteOffsetTracker{S}
     _own_io::Bool
     entries::Vector{EntryInfo}
     central_dir_buffer::Vector{UInt8}
@@ -70,14 +78,15 @@ mutable struct ZipWriter{S<:IO} <: IO
     """
     used_stripped_dir_names::Set{String}
     check_names::Bool
-    transcoder::Union{Nothing, NoopStream{S}, DeflateCompressorStream{S}}
+    transcoder::Union{Nothing, NoopStream{WriteOffsetTracker{S}}, DeflateCompressorStream{WriteOffsetTracker{S}}}
     function ZipWriter(io::IO;
             check_names::Bool=true,
             own_io::Bool=false,
             force_zip64::Bool=false,
+            offset::Int64=0,
         )
         new{typeof(io)}(
-            io,
+            WriteOffsetTracker(io, false, offset),
             own_io,
             EntryInfo[],
             UInt8[],
