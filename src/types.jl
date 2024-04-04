@@ -48,7 +48,7 @@ Base.@kwdef mutable struct PartialEntry
     local_header_size::Int64 = 50 + ncodeunits(name)
 end
 
-# Internal type to keep track of ZipWriter IO offsets and error state.
+# Internal type to keep track of ZipWriter's underlying IO offset and error state.
 # inspired by https://github.com/madler/zipflow/blob/main/zipflow.c
 mutable struct WriteOffsetTracker{S<:IO} <: IO
     io::S

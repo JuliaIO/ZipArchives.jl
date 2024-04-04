@@ -27,7 +27,8 @@ An alternative to [`zip_newfile`](@ref) is [`zip_writefile`](@ref)
     zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8})
 
 This will directly write a vector of data to a file entry in `w`.
-Unlike [`zip_newfile`](@ref) using [`zip_writefile`](@ref) doesn't require the wrapped `io` to be seekable.
+Unlike [`zip_newfile`](@ref) using [`zip_writefile`](@ref) doesn't require `io` 
+to be seekable.
 
 
 `Base.close` on a `ZipWriter` will only close the wrapped `io` if `zip_kwargs` has `own_io=true` or the `ZipWriter` was created from a filename.
@@ -39,10 +40,8 @@ writes from multiple threads at the same time.
 
 # Appending
 
-The archive will start writing at the current position of `io`, so if `io`
-is from an existing file opened with append, the archive will be appended as well.
-
-This is can lead to invalid zip archives.
+`ZipWriter` assumes `io` is empty.
+Trying to write to an `io` with existing data will result in an invalid archive.
 
 If you want to add entries to existing zip archive, use [`zip_append_archive`](@ref)
 
@@ -151,7 +150,7 @@ Start a new file entry named `name`.
 This will commit any currently open entry 
 and make `w` writable for file entry `name`.
 
-The wrapped `IO` in `w` must be seekable to use this function.
+The underlying `IO` in `w` must be seekable to use this function.
 If not see [`zip_writefile`](@ref)
 
 # Optional Keywords
@@ -276,7 +275,9 @@ Base.isopen(w::WriteOffsetTracker) = !w.bad
 Base.close(w::WriteOffsetTracker) = nothing # this should never be called
 Base.isreadable(w::WriteOffsetTracker) = false
 
-# all writes to the underlying io go through this function.
+# All writes to the underlying IO go through this function.
+# This enables ZipWriter when using zip_writefile to write to any IO that
+# supports Base.unsafe_write and Base.isopen
 function Base.unsafe_write(w::WriteOffsetTracker, p::Ptr{UInt8}, n::UInt)::Int
     (n > typemax(Int)) && throw(ArgumentError("too many bytes. Tried to write $n bytes"))
     (w.offset < 0) && throw(ArgumentError("initial offset was negative"))
@@ -394,7 +395,8 @@ end
 
 Write data as a file entry named `name`.
 
-Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
+Unlike `zip_newfile`, the underlying IO only needs to implement 
+`Base.unsafe_write` and `Base.isopen`.
 `w` isn't writable after. The written data will not be compressed.
 
 See also, [`zip_newfile`](@ref)

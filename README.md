@@ -12,7 +12,7 @@ multiple computers, not to backup a directory and preserve all local filesystem 
 
 All public functions are exported, non exported functions and struct fields are internal.
 
-See [test/test_simple-usage.jl](test/test_simple-usage.jl) for more examples.
+See [test/test_simple-usage.jl](https://github.com/JuliaIO/ZipArchives.jl/blob/main/test/test_simple-usage.jl) for more examples.
 
 
 ### Background

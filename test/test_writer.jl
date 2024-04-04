@@ -286,7 +286,6 @@ end
     end
     @testset "Append only IOBuffer" begin
         io = IOBuffer(;append=true)
-        # TODO fix writing to IOBuffer(;append=true)
         ZipWriter(io) do w
             zip_newfile(w, "inner.txt")
             write(w, "inner most text")
@@ -307,12 +306,15 @@ end
         end
     end
     @testset "maxsize IOBuffer" begin
-        io = IOBuffer(;maxsize=10)
-        # TODO fix writing to IOBuffer(;append=true)
-        @test_throws ArgumentError ZipWriter(io) do w
-            zip_newfile(w, "inner.txt")
-            write(w, "inner most text")
-        end
+        io = IOBuffer(;maxsize=100)
+        w = ZipWriter(io)
+        zip_newfile(w, "inner.txt"; compress=true)
+        @test_throws ArgumentError write(w, rand(UInt8, 1000000))
+        @test_throws ArgumentError position(w)
+        @test_throws ArgumentError write(w, rand(UInt8, 1000000))
+        @test_throws ArgumentError write(w, "a"^100)
+        @test_throws ArgumentError zip_newfile(w, "inner2.txt")
+        @test_throws ArgumentError close(w)
         @test_throws ArgumentError ZipReader(take!(io))
     end
     @testset "GzipCompressorStream" begin
