@@ -27,7 +27,8 @@ An alternative to [`zip_newfile`](@ref) is [`zip_writefile`](@ref)
     zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8})
 
 This will directly write a vector of data to a file entry in `w`.
-Unlike [`zip_newfile`](@ref) using [`zip_writefile`](@ref) doesn't require the wrapped `io` to be seekable.
+Unlike [`zip_newfile`](@ref) using [`zip_writefile`](@ref) doesn't require `io` 
+to be seekable.
 
 
 `Base.close` on a `ZipWriter` will only close the wrapped `io` if `zip_kwargs` has `own_io=true` or the `ZipWriter` was created from a filename.
@@ -39,11 +40,8 @@ writes from multiple threads at the same time.
 
 # Appending
 
-The archive will start writing at the current position of `io`, so if `io`
-is from an existing file opened with append, the archive will be appended as well.
-
-This is fine because zip archives can have arbitrary data at the start. 
-That data should be ignored by a zip reader.
+`ZipWriter` assumes `io` is empty.
+Trying to write to an `io` with existing data will result in an invalid archive.
 
 If you want to add entries to existing zip archive, use [`zip_append_archive`](@ref)
 
@@ -69,7 +67,7 @@ end
 
 function Base.show(io::IO, w::ZipWriter)
     print(io, "ZipArchives.ZipWriter(")
-    show(io, w._io)
+    show(io, w._io.io)
     print(io, ")")
 end
 
@@ -97,7 +95,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
             truncate(io, central_dir_offset)
         end
         seekend(io)
-        w = ZipWriter(io; zip_kwargs...)
+        w = ZipWriter(io; offset=Int64(position(io)), zip_kwargs...)
         w.entries = entries
         w.central_dir_buffer = central_dir_buffer
         if w.check_names
@@ -152,7 +150,7 @@ Start a new file entry named `name`.
 This will commit any currently open entry 
 and make `w` writable for file entry `name`.
 
-The wrapped `IO` in `w` must be seekable to use this function.
+The underlying `IO` in `w` must be seekable to use this function.
 If not see [`zip_writefile`](@ref)
 
 # Optional Keywords
@@ -178,6 +176,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     )
     @argcheck isopen(w)
     zip_commitfile(w)
+    w._io.bad && throw_bad_io()
     namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     @argcheck ncodeunits(comment) ≤ typemax(UInt16)
@@ -192,7 +191,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
         name=namestr,
         comment,
         w.force_zip64,
-        offset=0, # place holder offset
+        offset=io.offset,
     )
 
     if !isnothing(executable) && executable
@@ -225,9 +224,6 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     pe.method = real_compression_method
     
     write_local_header(io, pe)
-    # sometimes position before a write is the read position.
-    # That is why I am getting the offset after the write.
-    pe.offset = position(io) - pe.local_header_size
     w.partial_entry = pe
     @assert iswritable(w)
     nothing
@@ -262,6 +258,7 @@ end
 
 
 function assert_writeable(w::ZipWriter)
+    w._io.bad && throw_bad_io()
     if !iswritable(w)
         if isopen(w)
             throw(ArgumentError("ZipWriter not writable, call zip_newfile first"))
@@ -272,6 +269,32 @@ function assert_writeable(w::ZipWriter)
 end
 
 Base.write(w::ZipWriter, x::UInt8) = write(w, Ref(x))
+
+# WriteOffsetTracker
+Base.isopen(w::WriteOffsetTracker) = !w.bad
+Base.close(w::WriteOffsetTracker) = nothing # this should never be called
+Base.isreadable(w::WriteOffsetTracker) = false
+
+# All writes to the underlying IO go through this function.
+# This enables ZipWriter when using zip_writefile to write to any IO that
+# supports Base.unsafe_write and Base.isopen
+function Base.unsafe_write(w::WriteOffsetTracker, p::Ptr{UInt8}, n::UInt)::Int
+    (n > typemax(Int)) && throw(ArgumentError("too many bytes. Tried to write $n bytes"))
+    (w.offset < 0) && throw(ArgumentError("initial offset was negative"))
+    expected_offset::Int64 = Base.checked_add(w.offset, Int64(n))
+    if w.bad
+        throw_bad_io()
+    else
+        w.bad = true # if there are write errors, bad will stay as true
+        nb::UInt = unsafe_write(w.io, p, n)
+        (nb === n) || throw(ArgumentError("failed to write $n bytes to underlying io"))
+        w.offset = expected_offset
+        w.bad = false # if there were no write errors, set bad back to false.
+        n
+    end
+end
+
+throw_bad_io() = throw(ArgumentError("previous underlying io write error"))
 
 function Base.unsafe_write(w::ZipWriter, p::Ptr{UInt8}, n::UInt)::Int
     iszero(n) && return 0
@@ -307,29 +330,33 @@ function zip_commitfile(w::ZipWriter)
         # Finish the compressing here, but don't close underlying IO.
         try
             write(transcoder, TranscodingStreams.TOKEN_END)
+            # early exit incase io is broken
+            w._io.bad && throw_bad_io()
         finally
             # Prevent memory leak maybe.
             close(transcoder)
         end
-        cur_offset = position(w._io)
+        cur_offset = w._io.offset
         pe.compressed_size = cur_offset - pe.offset - pe.local_header_size
 
         # note, make sure never to change the partial_entry without increasing these
         if !iszero(pe.uncompressed_size) | !iszero(pe.compressed_size)
             # Must go back and update the local header if any data was written.
             # TODO add better error message about requiring seekable IO if this fails
-            try
-                seek(w._io, pe.offset)
-                write_local_header(w._io, pe)
-                after_write_offset = position(w._io)
-                cur_offset = max(cur_offset, after_write_offset)
-                # sometimes seek changes the read position
-                # but the write position is forced to the end on the next write.
-                # that is what the max is here to handle.
-                @argcheck after_write_offset == pe.offset + pe.local_header_size
-            finally
-                seek(w._io, cur_offset)
-            end
+            # sometimes seek changes the read position
+            # but the write position is forced to the end on the next write.
+            # that is what this is here to handle.
+            @argcheck position(w._io.io) == cur_offset
+            seek(w._io.io, pe.offset)
+            @argcheck position(w._io.io) == pe.offset
+            write_local_header(w._io, pe)
+            @argcheck position(w._io.io) == pe.offset + pe.local_header_size
+            seek(w._io.io, cur_offset)
+            @argcheck position(w._io.io) == cur_offset
+            # only set w._io.offset back to normal if all above checks work.
+            # otherwise assume w._io.io is appending all writes secretly,
+            # Like IOBuffer sometimes does.
+            w._io.offset = cur_offset
         end
         entry = append_entry!(w.central_dir_buffer, pe)
         if w.check_names
@@ -368,7 +395,8 @@ end
 
 Write data as a file entry named `name`.
 
-Unlike zip_newfile, the wrapped IO doesn't need to be seekable.
+Unlike `zip_newfile`, the underlying IO only needs to implement 
+`Base.unsafe_write` and `Base.isopen`.
 `w` isn't writable after. The written data will not be compressed.
 
 See also, [`zip_newfile`](@ref)
@@ -387,6 +415,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     )
     @argcheck isopen(w)
     zip_commitfile(w)
+    w._io.bad && throw_bad_io()
     namestr::String = String(name)
     @argcheck ncodeunits(namestr) ≤ typemax(UInt16)
     @argcheck ncodeunits(comment) ≤ typemax(UInt16)
@@ -401,7 +430,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     pe = PartialEntry(;
         name=namestr,
         comment,
-        offset=0,# place holder offset
+        offset=w._io.offset,
         w.force_zip64,
         compressed_size=length(data),
         uncompressed_size=length(data),
@@ -415,9 +444,6 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
         pe.external_attrs = external_attrs
     end
     write_local_header(io, pe)
-    # sometimes position before a write is the read position.
-    # That is why I am getting the offset after the write.
-    pe.offset = position(io) - pe.local_header_size
     write(io, data) == length(data) || error("short write")
     @assert !iswritable(w)
     entry = append_entry!(w.central_dir_buffer, pe)
@@ -495,7 +521,7 @@ function Base.close(w::ZipWriter)
             finally
                 @assert isnothing(w.partial_entry)
                 w.closed = true
-                w._own_io && close(w._io)
+                w._own_io && close(w._io.io)
             end
         end
     end
@@ -512,7 +538,8 @@ need_zip64(entry::PartialEntry)::Bool = (
 
 
 # Always writes 50 + ncodeunits(entry.name) bytes
-function write_local_header(io::IO, entry::PartialEntry)
+function write_local_header(io::WriteOffsetTracker, entry::PartialEntry)
+    io.bad && throw_bad_io()
     name_len::UInt16 = ncodeunits(entry.name)
     @assert entry.local_header_size == 50 + name_len
     b = zeros(UInt8, entry.local_header_size)
@@ -657,14 +684,15 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
 end
 
 function write_footer(
-        io::IO,
+        io::WriteOffsetTracker,
         entries::Vector{EntryInfo},
         central_dir_buffer::Vector{UInt8};
         force_zip64::Bool=false
     )
+    io.bad && throw_bad_io()
     size_of_central_dir = write(io, central_dir_buffer)
     size_of_central_dir == length(central_dir_buffer) || error("short write")
-    end_of_central_dir = position(io)
+    end_of_central_dir = io.offset
     @assert end_of_central_dir ≥ size_of_central_dir
     start_of_central_dir = end_of_central_dir - size_of_central_dir
     number_of_entries = length(entries)
@@ -712,7 +740,7 @@ function write_footer(
     @assert p == length(b)+1
     n = write(io, b)
     n == p-1 || error("short write")
-    after_write_offset = position(io)
+    after_write_offset = io.offset
     @argcheck after_write_offset == tailsize + end_of_central_dir
     tailsize + size_of_central_dir
 end

@@ -269,13 +269,53 @@ end
             @test read(entryio, String) == "inner2 text"
         end
 
-        # To avoid this call seekend before creating the zipwriter
-        # if using Base.Filesystem.open with JL_O_APPEND
         io = Base.Filesystem.open(filename, FLAGS, PERMISSIONS)
-        @test_throws ArgumentError ZipWriter(io; own_io=true) do w
+        ZipWriter(io; own_io=true) do w
+            zip_writefile(w, "bad offset.txt", codeunits("bad offset text"))
         end
+        @test_throws ArgumentError ZipReader(read(filename))
+
+        io = Base.Filesystem.open(filename, FLAGS, PERMISSIONS)
+        ZipWriter(io; own_io=true, offset=filesize(io)) do w
+            zip_writefile(w, "good offset.txt", codeunits("good offset text"))
+        end
+        r = ZipReader(read(filename))
+        @test zip_names(r) == ["good offset.txt"]
 
         rm(filename)
+    end
+    @testset "Append only IOBuffer" begin
+        io = IOBuffer(;append=true)
+        ZipWriter(io) do w
+            zip_newfile(w, "inner.txt")
+            write(w, "inner most text")
+            @test_throws ArgumentError zip_commitfile(w)
+            @test !iswritable(w)
+            zip_writefile(w, "inner2.txt", codeunits("inner2 text"))
+            zip_newfile(w, "inner3.txt")
+            write(w, "inner3 text")
+            zip_abortfile(w)
+            zip_newfile(w, "inner4.txt")
+            write(w, "inner4 text")
+            @test_throws ArgumentError zip_commitfile(w)
+        end
+        r = ZipReader(take!(io))
+        @test zip_names(r) == ["inner2.txt"]
+        zip_openentry(r, 1) do entryio
+            @test read(entryio, String) == "inner2 text"
+        end
+    end
+    @testset "maxsize IOBuffer" begin
+        io = IOBuffer(;maxsize=100)
+        w = ZipWriter(io)
+        zip_newfile(w, "inner.txt"; compress=true)
+        @test_throws ArgumentError write(w, rand(UInt8, 1000000))
+        @test_throws ArgumentError position(w)
+        @test_throws ArgumentError write(w, rand(UInt8, 1000000))
+        @test_throws ArgumentError write(w, "a"^100)
+        @test_throws ArgumentError zip_newfile(w, "inner2.txt")
+        @test_throws ArgumentError close(w)
+        @test_throws ArgumentError ZipReader(take!(io))
     end
     @testset "GzipCompressorStream" begin
         filename = tempname()
