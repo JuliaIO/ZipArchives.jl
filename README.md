@@ -116,7 +116,7 @@ Currently ZipArchives has the following benefits over ZipFile:
 6. Ability to append to an existing zip archive, in an `IO` or in a file on disk.
 
 ZipArchives currently has the following limitations compared to ZipFile:
-1. No way to specify the modification time, times are set to zero dos time.
+1. No way to specify the modification time, times are set to 1980-01-01 00:00:00 DOS date time.
 2. No `flush` function for `ZipWriter`. `close` and `zip_append_archive` can be used instead.
 3. Requires at least Julia 1.6.
 4. No way to read an archive from an `IOStream`, `mmap` can be used instead.
