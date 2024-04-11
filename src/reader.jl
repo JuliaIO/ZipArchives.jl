@@ -710,7 +710,6 @@ function zip_openentry(r::ZipReader, i::Int)
     @argcheck entry_data_offset ≤ fsize - compressed_size
 
     @argcheck read(io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
-    skip(io, extra_len)
 
     begin_ind::Int64 = firstindex(r.buffer)
     startidx = begin_ind + entry_data_offset
