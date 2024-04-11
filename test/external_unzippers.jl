@@ -1,7 +1,6 @@
 # Used to test that zip files written by ZipArchives.jl can be read by other programs.
 # This defines a vector of functions in `unzippers`
 # These functions take a zipfile path and a directory path and extract the zipfile into the directory
-import ZipFile
 import p7zip_jll
 # ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
 try
