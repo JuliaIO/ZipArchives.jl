@@ -37,8 +37,8 @@ Base.@kwdef mutable struct PartialEntry
     comment::String = ""
     external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
     method::UInt16 = Store # compression method
-    dos_time::UInt16 = 0 # last mod file time
-    dos_date::UInt16 = 0 # last mod file date
+    dos_time::UInt16 = 0x0000 # last mod file time
+    dos_date::UInt16 = 0x0021 # last mod file date
     force_zip64::Bool = false
     offset::UInt64
     bit_flags::UInt16 = 1<<11 # general purpose bit flag: 11 UTF-8 encoding

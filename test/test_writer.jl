@@ -1,6 +1,8 @@
 include("common.jl")
 using CodecZlib: GzipCompressorStream, GzipDecompressorStream
 using OffsetArrays: Origin
+import Malt
+import ZipFile
 
 Debug = false
 tmp = mktempdir()
@@ -118,6 +120,62 @@ include("external_unzippers.jl")
             end
             @test zip_nentries(dir) == total_files
         end
+    end
+end
+
+@testset "Writer compat with ZipStreams" begin
+    # setup test env for ZipStreams
+    worker = Malt.Worker()
+    Malt.remote_eval_fetch(worker, quote
+        import Pkg
+        Pkg.activate(;temp=true)
+        Pkg.add(name="ZipStreams", version="2.1.0")
+        import ZipStreams
+        nothing
+    end)
+    for filename in readdir(tmp)
+        endswith(filename, ".zip") || continue
+        zippath = joinpath(tmp, filename)
+        dir = ZipReader(read(zippath))
+        Malt.remote_eval_fetch(worker, quote
+            ZipStreams.zipsource($(zippath)) do zs
+                ZipStreams.validate(zs)
+            end
+            nothing
+        end)
+        Malt.remote_eval_fetch(worker, quote
+            zs = ZipStreams.zipsource($(zippath))
+            nothing
+        end)
+        for i in 1:zip_nentries(dir)
+            name, data = Malt.remote_eval_fetch(worker, quote
+                f = ZipStreams.next_file(zs)
+                (f.info.name, read(f,String))
+            end)
+            @test zip_readentry(dir, name, String) == data
+        end
+        @test Malt.remote_eval_fetch(worker, quote
+                f = ZipStreams.next_file(zs)
+                isnothing(f)
+        end)
+        Malt.remote_eval_fetch(worker, quote
+            close(zs)
+            nothing
+        end)
+    end
+end
+
+@testset "Writer compat with ZipFile" begin
+    for filename in readdir(tmp)
+        endswith(filename, ".zip") || continue
+        zippath = joinpath(tmp, filename)
+        dir = ZipReader(read(zippath))
+        r = ZipFile.Reader(zippath)
+        for f in r.files
+            @test zip_readentry(dir, f.name, String) == read(f, String)
+        end
+        @test length(r.files) == zip_nentries(dir)
+        close(r)
     end
 end
 
