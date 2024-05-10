@@ -100,7 +100,7 @@ function zip_append_archive(io::IO; trunc_footer=true, zip_kwargs=(;))::ZipWrite
         w.central_dir_buffer = central_dir_buffer
         if w.check_names
             for e in entries
-                add_name_used!(String(view(central_dir_buffer, e.name_range)), w.used_names, w.used_stripped_dir_names)
+                add_name_used!(copy_string(view(central_dir_buffer, e.name_range)), w.used_names, w.used_stripped_dir_names)
             end
         end
         w
