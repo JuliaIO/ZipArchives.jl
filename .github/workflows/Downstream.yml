@@ -1,0 +1,40 @@
+name: Downstream
+on:
+  push:
+    branches: [main]
+    tags: [v*]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.package.repo }}/${{ matrix.package.group }}
+    runs-on: ${{ matrix.os }}
+    env:
+      GROUP: ${{ matrix.package.group }}
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: [1]
+        os: [ubuntu-latest]
+        package:
+          - {user: ASML-Labs, repo: PPTX.jl, group: ZipArchives}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+          arch: x64
+      - uses: julia-actions/julia-buildpkg@latest
+      - name: Clone Downstream
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.package.user }}/${{ matrix.package.repo }}
+          path: downstream
+      - name: Load this and run the downstream tests
+        shell: julia --color=yes --project=downstream {0}
+        run: |
+          using Pkg
+          # force it to use this PR's version of the package
+          Pkg.develop(PackageSpec(path="."))  # resolver may fail with main deps
+          Pkg.update()
+          Pkg.test()  # resolver may fail with test time deps
