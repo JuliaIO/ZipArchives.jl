@@ -287,6 +287,6 @@ function rewrite_zip(old::AbstractString, new::AbstractString)
             end
         end
     finally
-        finalize(d)
+        GC.gc()
     end
 end
