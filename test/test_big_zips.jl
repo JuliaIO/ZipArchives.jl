@@ -16,7 +16,7 @@ include("common.jl")
             @test read(file, String) == "$(-i)"
         end
     end
-    d=nothing; GC.gc()
+    d=nothing; r=nothing; GC.gc()
     rm(filename)
 end
 
@@ -57,7 +57,7 @@ if Sys.WORD_SIZE == 64
             @test zip_name(r, i) == "$(i)"
             zip_test_entry(r, i)
         end
-        d=nothing; GC.gc()
+        d=nothing; r=nothing; GC.gc()
         rm(filename)
     end
 
@@ -76,7 +76,7 @@ if Sys.WORD_SIZE == 64
             @test zip_name(r, i) == "$(i)"
             zip_test_entry(r, i)
         end
-        d=nothing; GC.gc()
+        d=nothing; r=nothing; GC.gc()
         rm(filename)
     end
 end
