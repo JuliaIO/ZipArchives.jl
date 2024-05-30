@@ -264,6 +264,19 @@ end
 
 end
 
+@testset "reading from view" begin
+    io = IOBuffer()
+    ZipWriter(io) do w
+        zip_writefile(w, "foo.txt", codeunits("KYDtLOxn"))
+    end
+    data = take!(io)
+    n = length(data)
+    a = @view(zeros(UInt8, n*2)[begin:2:end])
+    a .= data
+    @test a == data
+    @test_broken ZipReader(a)
+end
+
 function rewrite_zip(old::AbstractString, new::AbstractString)
     d = mmap(old)
     try
