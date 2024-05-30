@@ -274,7 +274,7 @@ end
     a = @view(zeros(UInt8, n*2)[begin:2:end])
     a .= data
     @test a == data
-    @test_broken ZipReader(a)
+    r = ZipReader(a)
 end
 
 function rewrite_zip(old::AbstractString, new::AbstractString)
