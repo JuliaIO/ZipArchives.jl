@@ -55,7 +55,7 @@ function check_name_used(name::String, used_names::Set{String}, used_stripped_di
         # need to rstrip because of repeated '/'
         if isempty(parent_data) || parent_data[end] != UInt8('/')
             # this effectively rstrips all '/'
-            parent_name = copy_string(parent_data)
+            parent_name = bytes2string(parent_data)
             # @show parent_name
             @argcheck parent_name ∉ used_names
         end
@@ -75,7 +75,7 @@ function add_name_used!(name::String, used_names::Set{String}, used_stripped_dir
         # need to rstrip because of repeated '/'
         if isempty(parent_data) || parent_data[end] != UInt8('/')
             # this effectively rstrips all '/'
-            parent_name = copy_string(parent_data)
+            parent_name = bytes2string(parent_data)
             # @show parent_name
             push!(used_stripped_dir_names, parent_name)
         end     

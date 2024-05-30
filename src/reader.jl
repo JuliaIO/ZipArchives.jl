@@ -13,10 +13,10 @@ const ByteArray = Union{
 }
 
 # version of String(v::AbstractVector{UInt8}) that works consistently.
-function copy_string(v::AbstractVector{UInt8})::String
+function bytes2string(v::AbstractVector{UInt8})::String
     String(v)
 end
-function copy_string(v::Vector{UInt8})::String
+function bytes2string(v::Vector{UInt8})::String
     GC.@preserve v unsafe_string(pointer(v), length(v))
 end
 
@@ -72,7 +72,7 @@ Return the name of entry `i`.
 
 `i` can range from `1:zip_nentries(x)`
 """
-zip_name(x::HasEntries, i::Integer)::String = copy_string(_name_view(x, i))
+zip_name(x::HasEntries, i::Integer)::String = bytes2string(_name_view(x, i))
 
 """
     zip_names(x::HasEntries)::Vector{String}
@@ -111,7 +111,7 @@ zip_iscompressed(x::HasEntries, i::Integer)::Bool = x.entries[i].method != Store
 
 Return the comment attached to entry `i`
 """
-zip_comment(x::HasEntries, i::Integer)::String = copy_string(view(x.central_dir_buffer, x.entries[i].comment_range))
+zip_comment(x::HasEntries, i::Integer)::String = bytes2string(view(x.central_dir_buffer, x.entries[i].comment_range))
 
 """
     zip_stored_crc32(x::HasEntries, i::Integer)::UInt32
@@ -301,7 +301,7 @@ function zip_readentry(r::ZipReader, s::AbstractString)
 end
 
 function zip_readentry(r::ZipReader, i::Union{AbstractString, Integer}, ::Type{String})
-    copy_string(zip_readentry(r, i))
+    bytes2string(zip_readentry(r, i))
 end
 
 
