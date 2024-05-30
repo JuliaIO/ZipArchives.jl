@@ -1,14 +1,16 @@
 include("common.jl")
 
+filenames = []
 @testset "$N many entries" for N in [0, 1, 2^16-1, 2^16,]
-    filename = tempname()
+    local filename = tempname()
+    push!(filenames, filename)
     ZipWriter(filename) do w
         for i in 1:N
             zip_writefile(w,"$i",codeunits("$(-i)"))
         end
     end
-    d = mmap(filename)
-    r = ZipReader(d)
+    local d = mmap(filename)
+    local r = ZipReader(d)
     @test zip_nentries(r) == N
     for i in 1:N
         @test zip_name(r, i) == "$(i)"
@@ -16,9 +18,10 @@ include("common.jl")
             @test read(file, String) == "$(-i)"
         end
     end
-    finalize(d)
-    rm(filename)
 end
+GC.gc()
+rm.(filenames)
+empty!(filenames)
 
 # The following tests need 64 bit pointers
 # because they use very large zip files.
@@ -41,9 +44,11 @@ if Sys.WORD_SIZE == 64
         @test zip_nentries(r) == 1
         zip_test_entry(r, 1)
     end
+end
 
+filename = tempname()
+if Sys.WORD_SIZE == 64
     @testset "large offsets" begin
-        filename = tempname()
         ZipWriter(filename) do w
             x = rand(UInt8,2^20)
             for i in 1:2^13
@@ -57,12 +62,14 @@ if Sys.WORD_SIZE == 64
             @test zip_name(r, i) == "$(i)"
             zip_test_entry(r, i)
         end
-        finalize(d)
-        rm(filename)
     end
+end
+GC.gc()
+rm(filename; force=true)
 
+filename = tempname()
+if Sys.WORD_SIZE == 64
     @testset "large offsets and many entries" begin
-        filename = tempname()
         ZipWriter(filename) do w
             x = rand(UInt8,2^17)
             for i in 1:2^16
@@ -76,7 +83,7 @@ if Sys.WORD_SIZE == 64
             @test zip_name(r, i) == "$(i)"
             zip_test_entry(r, i)
         end
-        finalize(d)
-        rm(filename)
     end
 end
+GC.gc()
+rm(filename; force=true)
