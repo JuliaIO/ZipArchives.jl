@@ -1,7 +1,7 @@
 # ZipArchives
 
 [![docs](https://img.shields.io/badge/docs-stable-blue.svg)](https://juliahub.com/docs/General/ZipArchives/stable)
-[![Build Status](https://github.com/JuliaIO/ZipArchives.jl/workflows/CI/badge.svg)](https://github.com/JuliaIO/ZipArchives.jl/actions)
+[![CI](https://github.com/JuliaIO/ZipArchives.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/JuliaIO/ZipArchives.jl/actions/workflows/CI.yml)
 [![codecov](https://codecov.io/gh/JuliaIO/ZipArchives.jl/branch/main/graph/badge.svg?token=K3J0T9BZ42)](https://codecov.io/gh/JuliaIO/ZipArchives.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
