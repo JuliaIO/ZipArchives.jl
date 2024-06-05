@@ -3,6 +3,7 @@ using Pkg.Artifacts: @artifact_str, ensure_artifact_installed
 using Base64: base64decode
 using Setfield: @set
 using p7zip_jll: p7zip_jll
+using OffsetArrays: Origin
 
 @testset "find_end_of_central_directory_record unit tests" begin
     find_eocd = ZipArchives.find_end_of_central_directory_record
@@ -275,6 +276,21 @@ end
     a .= data
     @test a == data
     r = ZipReader(a)
+    @test zip_names(r) == ["foo.txt"]
+    @test zip_readentry(r, 1) == codeunits("KYDtLOxn")
+end
+
+@testset "reading from offset array" begin
+    io = IOBuffer()
+    ZipWriter(io) do w
+        zip_writefile(w, "foo.txt", codeunits("KYDtLOxn"))
+    end
+    data = take!(io)
+    n = length(data)
+    a = Origin(0)(data)
+    r = ZipReader(a)
+    @test zip_names(r) == ["foo.txt"]
+    @test zip_readentry(r, 1) == codeunits("KYDtLOxn")
 end
 
 function rewrite_zip(old::AbstractString, new::AbstractString)

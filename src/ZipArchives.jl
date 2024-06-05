@@ -50,6 +50,7 @@ using CodecZlib: DeflateCompressorStream, DeflateDecompressorStream, DeflateComp
 using TranscodingStreams: TranscodingStreams, TranscodingStream, Noop, NoopStream
 using ArgCheck: @argcheck
 using Zlib_jll: Zlib_jll
+using InputBuffers: InputBuffer
 using PrecompileTools: @setup_workload, @compile_workload
 
 include("constants.jl")
