@@ -28,7 +28,7 @@ Return the standard zip CRC32 checksum of data
 See also [`zip_stored_crc32`](@ref), [`zip_test_entry`](@ref).
 """
 function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
-    GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), crc)
+    GC.@preserve data unsafe_crc32(pointer(data, 1), UInt(length(data)), crc)
 end
 
 function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
