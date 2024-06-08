@@ -423,3 +423,11 @@ end
 @testset "crc32 of offset arrays" begin
     @test zip_crc32(Origin(0)(b"hello")) == zip_crc32(b"hello")
 end
+
+@testset "crc32 of views of arrays with non Int indexes" begin
+    data = rand(UInt8, 1000)
+    r = zip_crc32(data[2:90])
+    for T in (BigInt, UInt64, Int64)
+        @test r == zip_crc32(view(data, T(2):T(90)))
+    end
+end
