@@ -470,7 +470,7 @@ function parse_central_directory(io::IO)
 end
 
 function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num_entries::Int64)::Vector{EntryInfo}
-    io_b = IOBuffer(central_dir_buffer)
+    io_b = InputBuffer(central_dir_buffer)
     seekstart(io_b)
     # parse central directory headers
     # If num_entries is crazy high, avoid allocating crazy amount of memory
@@ -654,7 +654,7 @@ however, the streams returned by `zip_openentry`
 should only be accessed by one thread at a time.
 """
 function ZipReader(buffer::AbstractVector{UInt8})
-    io = IOBuffer(buffer)
+    io = InputBuffer(buffer)
     entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
     ZipReader{typeof(buffer)}(entries, central_dir_buffer, central_dir_offset, buffer)
 end
@@ -697,7 +697,7 @@ function zip_openentry(r::ZipReader, i::Int)
     entry::EntryInfo = r.entries[i]
     compressed_size::Int64 = entry.compressed_size
     validate_entry(entry, fsize)
-    io = IOBuffer(r.buffer)
+    io = InputBuffer(r.buffer)
     local_header_offset::Int64 = entry.offset
     method = entry.method
     # read and validate local header
@@ -727,7 +727,7 @@ function zip_openentry(r::ZipReader, i::Int)
     @argcheck lastidx ≤ lastindex(r.buffer)
     @argcheck length(startidx:lastidx) == compressed_size
     
-    base_io = IOBuffer(view(r.buffer, startidx:lastidx))
+    base_io = InputBuffer(view(r.buffer, startidx:lastidx))
     if method == Store
         return base_io
     elseif method == Deflate
