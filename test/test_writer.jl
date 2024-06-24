@@ -130,7 +130,7 @@ if VERSION ≥ v"1.7.0" # ZipStreams requires julia 1.7
         Malt.remote_eval_fetch(worker, quote
             import Pkg
             Pkg.activate(;temp=true)
-            Pkg.add(name="ZipStreams", version="2.1.1")
+            Pkg.add(name="ZipStreams", version="2.2.0")
             import ZipStreams
             nothing
         end)
