@@ -147,8 +147,8 @@ end
     data_b64 = "UEsDBD8AAgAOAHJb0FaLksVmIgAAABAAAAAJAAAAbHptYV9kYXRhCQQFAF0AAIAAADoaCWd+rnMR0beE5IbQKkMGbV//6/YgAFBLAQI/AD8AAgAOAHJb0FaLksVmIgAAABAAAAAJAAAAAAAAAAAAAACAAQAAAABsem1hX2RhdGFQSwUGAAAAAAEAAQA3AAAASQAAAAAA"
     data = base64decode(data_b64)
     r = ZipReader(data)
-    @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_test_entry(r, 1)
-    @test_throws ArgumentError("invalid compression method: 14. Only Store and Deflate supported for now") zip_openentry(r, 1)
+    @test_throws ArgumentError("invalid compression method: 14. Only Store(0) and Deflate(8) supported for now") zip_test_entry(r, 1)
+    @test_throws ArgumentError("invalid compression method: 14. Only Store(0) and Deflate(8) supported for now") zip_openentry(r, 1)
     @test zip_iscompressed(r, 1)
     @test zip_names(r) == ["lzma_data"]
 end

@@ -100,6 +100,19 @@ Note: if the zip file was corrupted, this might be wrong.
 zip_compressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].compressed_size
 
 """
+    zip_compression_method(x::HasEntries, i::Integer)::UInt16
+
+Return the compression method used for entry `i`.
+
+See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT for a current list of methods.
+
+Only Store(0x0000) and Deflate(0x0008) supported for now.
+
+Note: if the zip file was corrupted, this might be wrong.
+"""
+zip_compression_method(x::HasEntries, i::Integer)::UInt16 = x.entries[i].method
+
+"""
     zip_iscompressed(x::HasEntries, i::Integer)::Bool
 
 Return if entry `i` is marked as compressed.
@@ -599,15 +612,12 @@ end
 Throw an ArgumentError if entry cannot be extracted.
 =#
 function validate_entry(entry::EntryInfo, fsize::Int64)
-    if entry.method != Store && entry.method != Deflate
-        throw(ArgumentError("invalid compression method: $(entry.method). Only Store and Deflate supported for now"))
-    end
     # Check for unsupported bit flags
     @argcheck iszero(entry.bit_flags & 1<<0) "encrypted files not supported"
     @argcheck iszero(entry.bit_flags & 1<<5) "patched data not supported"
     @argcheck iszero(entry.bit_flags & 1<<6) "encrypted files not supported"
     @argcheck iszero(entry.bit_flags & 1<<13) "encrypted files not supported"
-    @argcheck entry.version_needed ≤ 45
+    @argcheck entry.version_needed ≤ 63
     # This allows for files to overlap, which sometimes can happen.
     min_loc_h_size::Int64 = min_local_header_size(entry)
     @argcheck min_loc_h_size > 29 
@@ -691,8 +701,7 @@ function Base.show(io::IO, ::MIME"text/plain", r::ZipReader)
     end
 end
 
-
-function zip_openentry(r::ZipReader, i::Int)
+function zip_entry_data_offset(r::ZipReader, i::Int)::Int64
     fsize::Int64 = length(r.buffer)
     entry::EntryInfo = r.entries[i]
     compressed_size::Int64 = entry.compressed_size
@@ -719,6 +728,17 @@ function zip_openentry(r::ZipReader, i::Int)
 
     @argcheck read(io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
 
+    entry_data_offset
+end
+
+function zip_openentry(r::ZipReader, i::Int)
+    compressed_size::Int64 = zip_compressed_size(r, i)
+    method = zip_compression_method(r, i)
+    if method != Store && method != Deflate
+        throw(ArgumentError("invalid compression method: $(method). Only Store(0) and Deflate(8) supported for now"))
+    end
+    entry_data_offset = zip_entry_data_offset(r, i)
+
     begin_ind::Int64 = firstindex(r.buffer)
     startidx = begin_ind + entry_data_offset
     @argcheck startidx > begin_ind
@@ -733,7 +753,7 @@ function zip_openentry(r::ZipReader, i::Int)
     elseif method == Deflate
         return DeflateDecompressorStream(base_io)
     else
-        # validate_entry should throw and ArgumentError before this
+        # should throw and ArgumentError before this
         error("unreachable") 
     end
 end
