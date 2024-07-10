@@ -151,6 +151,12 @@ end
     @test_throws ArgumentError("invalid compression method: 14. Only Store(0) and Deflate(8) supported for now") zip_openentry(r, 1)
     @test zip_iscompressed(r, 1)
     @test zip_names(r) == ["lzma_data"]
+    @test ZipArchives.zip_compression_method(r, 1) === 0x000e
+    entry_data_offset = 39
+    compressed_size = 34
+    @test ZipArchives.zip_entry_data_offset(r, 1) === Int64(entry_data_offset)
+    @test ZipArchives.zip_entry_data_offset(r, big(1)) === Int64(entry_data_offset)
+    @test ZipArchives.zip_compressed_size(r, 1) === UInt64(compressed_size)
 end
 
 @testset "reading file with zip64 disk number" begin
