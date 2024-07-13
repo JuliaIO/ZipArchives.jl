@@ -35,12 +35,10 @@ function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
     zip_crc32(collect(data), crc)
 end
 
-# Copied from ZipFile.jl
-readle(io::IO, ::Type{UInt64}) = htol(read(io, UInt64))
-readle(io::IO, ::Type{UInt32}) = htol(read(io, UInt32))
-readle(io::IO, ::Type{UInt16}) = htol(read(io, UInt16))
-readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
-
+@inline readle(io::IO, ::Type{UInt64}) = UInt64(readle(io, UInt32)) | UInt64(readle(io, UInt32))<<32
+@inline readle(io::IO, ::Type{UInt32}) = UInt32(readle(io, UInt16)) | UInt32(readle(io, UInt16))<<16
+@inline readle(io::IO, ::Type{UInt16}) = UInt16(read(io, UInt8)) | UInt16(read(io, UInt8))<<8
+@inline readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
 
 #=
 Return the minimum size of a local header for an entry.
