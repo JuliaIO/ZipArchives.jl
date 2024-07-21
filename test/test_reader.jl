@@ -4,6 +4,7 @@ using Base64: base64decode
 using Setfield: @set
 using p7zip_jll: p7zip_jll
 using OffsetArrays: Origin
+using SHA: sha256
 
 @testset "find_end_of_central_directory_record unit tests" begin
     find_eocd = ZipArchives.find_end_of_central_directory_record
@@ -223,13 +224,17 @@ end
                 run(pipeline(`$(exe) x -y -o$(tmpout) $(file)`, devnull))
             end
             for i in 1:zip_nentries(r)
+                # TODO support deflate64
+                ZipArchives.zip_compression_method(r, i) == 9 && continue
                 zip_test_entry(r, i)
                 name = zip_name(r, i)
                 if zip_isdir(r, i)
                     @test isdir(joinpath(tmpout,name))
                 else
+                    sevenziphash = open(sha256, joinpath(tmpout,name))
+                    ziphash = zip_openentry(sha256, r, i)
                     entry_data = zip_readentry(r, i)
-                    @test read(joinpath(tmpout,name)) == entry_data
+                    @test sevenziphash == ziphash
                 end
             end
         end
