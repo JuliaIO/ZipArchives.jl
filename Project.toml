@@ -14,7 +14,7 @@ Zlib_jll = "83775a58-1f1d-513f-b197-d71354ab007a"
 [compat]
 ArgCheck = "2"
 CodecZlib = "0.7"
-InputBuffers = "0.1.1, 0.2"
+InputBuffers = "0.1.1, 0.2, 1"
 PrecompileTools = "1"
 TranscodingStreams = "0.10.5, 0.11"
 Zlib_jll = "1"
