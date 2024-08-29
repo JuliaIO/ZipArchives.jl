@@ -111,6 +111,16 @@ Note: if the zip file was corrupted, this might be wrong.
 zip_compression_method(x::HasEntries, i::Integer)::UInt16 = x.entries[i].method
 
 """
+    zip_general_purpose_bit_flag(x::HasEntries, i::Integer)::UInt16
+
+Return the general purpose bit flag for entry `i`.
+
+See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT 
+for a description of the bits.
+"""
+zip_general_purpose_bit_flag(x::HasEntries, i::Integer)::UInt16 = x.entries[i].bit_flags
+
+"""
     zip_iscompressed(x::HasEntries, i::Integer)::Bool
 
 Return if entry `i` is marked as compressed.
