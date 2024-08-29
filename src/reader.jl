@@ -603,13 +603,16 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
         )
     end
     # Maybe num_entries was too small: See https://github.com/thejoshwolfe/yauzl/issues/60
-    # In that case just log a warning
-    if bytesavailable(io_b) ≥ 4
-        if readle(io_b, UInt32) == 0x02014b50
-            @warn "There may be some entries that are being ignored"
-        end
-        skip(io_b, -4)
-    end
+    # In that case ignore any potential extra entries.
+    # Logging a warning here is not part of the zip spec, and causes JET
+    # to complain.
+    # Commented out warning:
+    # if bytesavailable(io_b) ≥ 4
+    #     if readle(io_b, UInt32) == 0x02014b50
+    #         @warn "There may be some entries that are being ignored"
+    #     end
+    #     skip(io_b, -4)
+    # end
 
     resize!(central_dir_buffer, position(io_b))
     entries

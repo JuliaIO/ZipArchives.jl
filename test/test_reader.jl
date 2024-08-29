@@ -95,8 +95,9 @@ end
     @test isempty(entries)
     @test central_dir_offset == 0
 
+    # @test_logs (:warn,"There may be some entries that are being ignored")
     io = IOBuffer([b"PK\x01\x02"; b"PK\x05\x06"; zeros(UInt8,2*4+4*2+2)])
-    @test_logs (:warn,"There may be some entries that are being ignored") entries, central_dir_buffer, central_dir_offset = ZipArchives.parse_central_directory(io)
+    entries, central_dir_buffer, central_dir_offset = ZipArchives.parse_central_directory(io)
     @test isempty(entries)
     @test central_dir_offset == 0
 end
