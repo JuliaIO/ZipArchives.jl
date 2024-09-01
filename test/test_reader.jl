@@ -119,6 +119,7 @@ end
     )
     r = ZipReader(testdata)
     @test_throws ArgumentError zip_test_entry(r, 1)
+    @test_throws ErrorException zip_test(r)
 end
 
 @testset "Invalid Deflated data" begin
