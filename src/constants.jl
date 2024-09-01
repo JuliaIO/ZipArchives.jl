@@ -4,6 +4,9 @@ const Store = UInt16(0)
 "Deflate compression method"
 const Deflate = UInt16(8)
 
+"Deflate64 compression method"
+const Deflate64 = UInt16(9)
+
 #=
 see https://github.com/madler/zipflow/blob/2bef2123ebe519c17b18d2d0c3c71065088de952/zipflow.c#L214
 =#

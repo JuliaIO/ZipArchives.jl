@@ -5,6 +5,7 @@ version = "2.2.0"
 
 [deps]
 ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
+CodecInflate64 = "6309b1aa-fc58-479c-8956-599a07234577"
 CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
 InputBuffers = "0c81fc1b-5583-44fc-8770-48be1e1cca08"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
@@ -13,6 +14,7 @@ Zlib_jll = "83775a58-1f1d-513f-b197-d71354ab007a"
 
 [compat]
 ArgCheck = "2"
+CodecInflate64 = "0.1"
 CodecZlib = "0.7"
 InputBuffers = "1"
 PrecompileTools = "1"

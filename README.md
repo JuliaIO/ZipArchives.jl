@@ -31,6 +31,8 @@ The central directory makes it fast to read just one random entry out of a very 
 
 When writing it is important to close the writer so the central directory gets written out.
 
+More details on the file format can be found at https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
+
 ### Reading Zip archives
 
 Archives can be read from any `AbstractVector{UInt8}` containing the data of a zip archive.
@@ -85,6 +87,13 @@ ZipWriter(filename) do w
 end
 ```
 
+### Supported Compression Methods
+
+| Compression Method | Reading | Writing |
+|--------------------|---------|---------|
+| 0 - Store (none)   | Yes     | Yes     |
+| 8 - Deflate        | Yes     | Yes     |
+| 9 - Deflate64      | Yes     | No      |
 
 ### Limitations
 
@@ -92,7 +101,6 @@ end
 1. Ignores time stamps.
 1. Cannot write an archive fully in streaming mode. See https://github.com/madler/zipflow if you need this functionality.
 1. Encryption and decryption not supported.
-1. Only deflated and uncompressed data are supported. There is no support for bzip2 or zstd.
 1. Multi disk archives not supported.
 1. Cannot recover data from a corrupted archive. Especially if the end of the archive is corrupted.
 

@@ -47,6 +47,7 @@ end
 module ZipArchives
 
 using CodecZlib: DeflateCompressorStream, DeflateDecompressorStream, DeflateCompressor
+using CodecInflate64: Deflate64DecompressorStream
 using TranscodingStreams: TranscodingStreams, TranscodingStream, Noop, NoopStream
 using ArgCheck: @argcheck
 using Zlib_jll: Zlib_jll
