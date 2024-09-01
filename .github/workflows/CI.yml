@@ -16,33 +16,33 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.6'
           - '1'
-          - '~1.11.0-0'
+          - 'pre'
         os:
           - ubuntu-latest
-          - macOS-13 # intel
-          - macOS-14 # arm
           - windows-latest
         arch:
           - 'x64'
           - 'x86'
-          - 'aarch64'
-        exclude:
+        include:
           - os: ubuntu-latest
-            arch: aarch64
-          - os: windows-latest
-            arch: aarch64
-          - os: macOS-13
+            version: '1.6'
+            arch: x64
+          - os: ubuntu-latest
+            version: '1.6'
             arch: x86
           - os: macOS-13
-            arch: aarch64
-          - os: macOS-14
-            arch: x86
-          - os: macOS-14
+            version: '1'
+            arch: x64
+          - os: macOS-13
+            version: 'pre'
             arch: x64
           - os: macOS-14
-            version: '1.6'
+            version: '1'
+            arch: aarch64
+          - os: macOS-14
+            version: 'pre'
+            arch: aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2

@@ -61,6 +61,7 @@ using Test: @testset, @test, @test_throws
     # Don't modify `data` while reading it through a ZipReader.
     r = ZipReader(data)
     zip_nentries(r) == 3
+    @test parent(r) === data
 
     @test zip_names(r) == ["test/test1.txt", "test/empty.txt", "test/test2.txt", "test/compressed.txt"]
     @test zip_name(r, 3) == "test/test2.txt"
@@ -88,6 +89,8 @@ using Test: @testset, @test, @test_throws
     # Test that an entry has a correct checksum.
     zip_test_entry(r, 3)
     zip_test_entry(r, 4)
+    # Test all the entries
+    zip_test(r)
 
     # entries are not marked as executable by default
     @test !zip_isexecutablefile(r, 1)

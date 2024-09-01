@@ -3,4 +3,4 @@ git-tree-sha1 = "ed34b433321060f64bbdbda044851336788b9af6"
 
     [[fixture.download]]
     sha256 = "99a9bb1d9cba1fae77fd7be224b654da1f247815845ef4ac682a546e8dc70ceb"
-    url = "https://github.com/medyan-dev/ZipArchives.jl/releases/download/v2.1.6/fixture.tar.gz"
+    url = "https://github.com/JuliaIO/ZipArchives.jl/releases/download/v2.1.6/fixture.tar.gz"

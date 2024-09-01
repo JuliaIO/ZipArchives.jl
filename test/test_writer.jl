@@ -431,3 +431,12 @@ end
         @test r == zip_crc32(view(data, T(2):T(90)))
     end
 end
+
+@testset "zip_writefile on non dense arrays" begin
+    out = IOBuffer()
+    ZipWriter(out) do w
+        zip_writefile(w, "data.txt", 0x01:0x0f)
+    end
+    r = ZipReader(take!(out))
+    @test zip_readentry(r, "data.txt") == 0x01:0x0f
+end

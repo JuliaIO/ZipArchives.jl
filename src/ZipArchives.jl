@@ -60,7 +60,7 @@ include("types.jl")
 
 include("reader.jl")
 export ZipReader
-export ZipBufferReader
+export ZipBufferReader # alias for ZipReader for compat reasons
 
 export zip_crc32
 
@@ -76,8 +76,12 @@ export zip_isdir
 export zip_isexecutablefile
 export zip_findlast_entry
 export zip_comment
+export zip_compression_method
+export zip_general_purpose_bit_flag
+export zip_entry_data_offset
 
 export zip_test_entry
+export zip_test
 export zip_openentry
 export zip_readentry
 

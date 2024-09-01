@@ -96,8 +96,9 @@ end
     @test isempty(entries)
     @test central_dir_offset == 0
 
+    # @test_logs (:warn,"There may be some entries that are being ignored")
     io = IOBuffer([b"PK\x01\x02"; b"PK\x05\x06"; zeros(UInt8,2*4+4*2+2)])
-    @test_logs (:warn,"There may be some entries that are being ignored") entries, central_dir_buffer, central_dir_offset = ZipArchives.parse_central_directory(io)
+    entries, central_dir_buffer, central_dir_offset = ZipArchives.parse_central_directory(io)
     @test isempty(entries)
     @test central_dir_offset == 0
 end
@@ -119,6 +120,7 @@ end
     )
     r = ZipReader(testdata)
     @test_throws ArgumentError zip_test_entry(r, 1)
+    @test_throws ErrorException zip_test(r)
 end
 
 @testset "Invalid Deflated data" begin
@@ -152,12 +154,15 @@ end
     @test_throws ArgumentError("invalid compression method: 14. Only Store(0) and Deflate(8) supported for now") zip_openentry(r, 1)
     @test zip_iscompressed(r, 1)
     @test zip_names(r) == ["lzma_data"]
-    @test ZipArchives.zip_compression_method(r, 1) === 0x000e
+    @test zip_compression_method(r, 1) === 0x000e
+    @test zip_general_purpose_bit_flag(r, 1) === 0x0002 # indicates
+    # an end-of-stream (EOS) marker is used to
+    # mark the end of the compressed data stream
     entry_data_offset = 39
     compressed_size = 34
-    @test ZipArchives.zip_entry_data_offset(r, 1) === Int64(entry_data_offset)
-    @test ZipArchives.zip_entry_data_offset(r, big(1)) === Int64(entry_data_offset)
-    @test ZipArchives.zip_compressed_size(r, 1) === UInt64(compressed_size)
+    @test zip_entry_data_offset(r, 1) === Int64(entry_data_offset)
+    @test zip_entry_data_offset(r, big(1)) === Int64(entry_data_offset)
+    @test zip_compressed_size(r, 1) === UInt64(compressed_size)
 end
 
 @testset "reading file with zip64 disk number" begin

@@ -111,6 +111,16 @@ Note: if the zip file was corrupted, this might be wrong.
 zip_compression_method(x::HasEntries, i::Integer)::UInt16 = x.entries[i].method
 
 """
+    zip_general_purpose_bit_flag(x::HasEntries, i::Integer)::UInt16
+
+Return the general purpose bit flag for entry `i`.
+
+See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT 
+for a description of the bits.
+"""
+zip_general_purpose_bit_flag(x::HasEntries, i::Integer)::UInt16 = x.entries[i].bit_flags
+
+"""
     zip_iscompressed(x::HasEntries, i::Integer)::Bool
 
 Return if entry `i` is marked as compressed.
@@ -241,6 +251,22 @@ function zip_test_entry(r::ZipReader, i::Integer)::Nothing
     nothing
 end
 
+"""
+    zip_test(r::ZipReader)::Nothing
+
+Test all entries in the archive in order from `1` to `zip_nentries(r)`
+Throw an error for the first invalid entry.
+"""
+function zip_test(r::ZipReader)::Nothing
+    for i in 1:zip_nentries(r)
+        try
+            zip_test_entry(r, i)
+        catch
+            error("entry $(i): $(repr(zip_name(r, i))) is invalid")
+        end
+    end
+    nothing
+end
 
 """
     zip_openentry(r::ZipReader, i::Union{AbstractString, Integer})
@@ -593,13 +619,16 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
         )
     end
     # Maybe num_entries was too small: See https://github.com/thejoshwolfe/yauzl/issues/60
-    # In that case just log a warning
-    if bytesavailable(io_b) ≥ 4
-        if readle(io_b, UInt32) == 0x02014b50
-            @warn "There may be some entries that are being ignored"
-        end
-        skip(io_b, -4)
-    end
+    # In that case ignore any potential extra entries.
+    # Logging a warning here is not part of the zip spec, and causes JET
+    # to complain.
+    # Commented out warning:
+    # if bytesavailable(io_b) ≥ 4
+    #     if readle(io_b, UInt32) == 0x02014b50
+    #         @warn "There may be some entries that are being ignored"
+    #     end
+    #     skip(io_b, -4)
+    # end
 
     resize!(central_dir_buffer, position(io_b))
     entries
@@ -633,12 +662,12 @@ end
     struct ZipReader{T<:AbstractVector{UInt8}}
     ZipReader(buffer::AbstractVector{UInt8})
 
-Create a reader for a zip archive in `buffer`.
+View the bytes in `buffer` as a ZIP archive.
 
 The array must not be modified while being read.
 
-`zip_nentries(r::ZipReader)::Int` returns the 
-number of entries in the archive. 
+`zip_nentries(r::ZipReader)::Int` returns the
+number of entries in the archive.
 
 `zip_names(r::ZipReader)::Vector{String}` returns the names of all the entries in the archive.
 
@@ -653,12 +682,12 @@ Entries are indexed from `1:zip_nentries(r)`
 
 `zip_openentry` and `zip_readentry` can be used to read data from an entry.
 
-A `ZipReader` object does not need to be closed, and cannot be closed.
+The `parent` function can be used to get the underlying buffer.
 
 # Multi threading
 
-The returned `ZipReader` object can safely be used from multiple threads; 
-however, the streams returned by `zip_openentry` 
+The returned `ZipReader` object can safely be used from multiple threads;
+however, the streams returned by `zip_openentry`
 should only be accessed by one thread at a time.
 """
 function ZipReader(buffer::AbstractVector{UInt8})
@@ -698,6 +727,8 @@ function Base.show(io::IO, ::MIME"text/plain", r::ZipReader)
         join(io, [print_names[1:lines-6]; "⋮"], "\n  ")
     end
 end
+
+Base.parent(r::ZipReader) = r.buffer
 
 """
     zip_entry_data_offset(r::ZipReader, i::Integer)::Int64
