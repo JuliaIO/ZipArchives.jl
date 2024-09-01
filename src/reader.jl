@@ -104,7 +104,7 @@ Return the compression method used for entry `i`.
 
 See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT for a current list of methods.
 
-Only Store(0x0000) and Deflate(0x0008) supported for now.
+Only Store(0), Deflate(8), and Deflate64(9) are supported for now.
 
 Note: if the zip file was corrupted, this might be wrong.
 """
@@ -774,8 +774,8 @@ end
 function zip_openentry(r::ZipReader, i::Int)
     compressed_size::Int64 = zip_compressed_size(r, i)
     method = zip_compression_method(r, i)
-    if method != Store && method != Deflate
-        throw(ArgumentError("invalid compression method: $(method). Only Store(0) and Deflate(8) supported for now"))
+    if method != Store && method != Deflate && method != Deflate64
+        throw(ArgumentError("invalid compression method: $(method). Only Store(0), Deflate(8), and Deflate64(9) supported for now"))
     end
     entry_data_offset = zip_entry_data_offset(r, i)
 
@@ -792,6 +792,8 @@ function zip_openentry(r::ZipReader, i::Int)
         return base_io
     elseif method == Deflate
         return DeflateDecompressorStream(base_io)
+    elseif method == Deflate64
+        return Deflate64DecompressorStream(base_io)
     else
         # should throw and ArgumentError before this
         error("unreachable") 
