@@ -220,10 +220,11 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
         throw(ArgumentError("compression_method must be Deflate or Store"))
     end
     pe.bit_flags |= level_bits
-    w.transcoder = TranscodingStream(codec, io; sharedbuf=false, stop_on_end=true)
     pe.method = real_compression_method
-    
     write_local_header(io, pe)
+    # io is a WriteOffsetTracker so it is protected from closing
+    # the underlying IO, or sharing buffers incorrectly.
+    w.transcoder = TranscodingStream(codec, io)
     w.partial_entry = pe
     @assert iswritable(w)
     nothing
@@ -277,7 +278,7 @@ Base.isreadable(w::WriteOffsetTracker) = false
 
 # All writes to the underlying IO go through this function.
 # This enables ZipWriter when using zip_writefile to write to any IO that
-# supports Base.unsafe_write and Base.isopen
+# supports Base.unsafe_write
 function Base.unsafe_write(w::WriteOffsetTracker, p::Ptr{UInt8}, n::UInt)::Int
     (n > typemax(Int)) && throw(ArgumentError("too many bytes. Tried to write $n bytes"))
     (w.offset < 0) && throw(ArgumentError("initial offset was negative"))
