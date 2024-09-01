@@ -81,6 +81,7 @@ export zip_general_purpose_bit_flag
 export zip_entry_data_offset
 
 export zip_test_entry
+export zip_test
 export zip_openentry
 export zip_readentry
 

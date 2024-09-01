@@ -251,6 +251,22 @@ function zip_test_entry(r::ZipReader, i::Integer)::Nothing
     nothing
 end
 
+"""
+    zip_test(x::ZipReader)::Nothing
+
+Test all entries in the archive in order from `1` to `zip_nentries(r)`
+Throw an error for the first invalid entry.
+"""
+function zip_test(r::ZipReader)::Nothing
+    for i in 1:zip_nentries(r)
+        try
+            zip_test_entry(r, i)
+        catch
+            error("entry $(i): $(repr(zip_name(r, i))) is invalid")
+        end
+    end
+    nothing
+end
 
 """
     zip_openentry(r::ZipReader, i::Union{AbstractString, Integer})

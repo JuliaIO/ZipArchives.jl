@@ -89,6 +89,8 @@ using Test: @testset, @test, @test_throws
     # Test that an entry has a correct checksum.
     zip_test_entry(r, 3)
     zip_test_entry(r, 4)
+    # Test all the entries
+    zip_test(r)
 
     # entries are not marked as executable by default
     @test !zip_isexecutablefile(r, 1)
