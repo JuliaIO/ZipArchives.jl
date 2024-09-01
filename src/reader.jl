@@ -646,12 +646,12 @@ end
     struct ZipReader{T<:AbstractVector{UInt8}}
     ZipReader(buffer::AbstractVector{UInt8})
 
-Create a reader for a zip archive in `buffer`.
+View the bytes in `buffer` as a ZIP archive.
 
 The array must not be modified while being read.
 
-`zip_nentries(r::ZipReader)::Int` returns the 
-number of entries in the archive. 
+`zip_nentries(r::ZipReader)::Int` returns the
+number of entries in the archive.
 
 `zip_names(r::ZipReader)::Vector{String}` returns the names of all the entries in the archive.
 
@@ -666,12 +666,12 @@ Entries are indexed from `1:zip_nentries(r)`
 
 `zip_openentry` and `zip_readentry` can be used to read data from an entry.
 
-A `ZipReader` object does not need to be closed, and cannot be closed.
+The `parent` function can be used to get the underlying buffer.
 
 # Multi threading
 
-The returned `ZipReader` object can safely be used from multiple threads; 
-however, the streams returned by `zip_openentry` 
+The returned `ZipReader` object can safely be used from multiple threads;
+however, the streams returned by `zip_openentry`
 should only be accessed by one thread at a time.
 """
 function ZipReader(buffer::AbstractVector{UInt8})
@@ -711,6 +711,8 @@ function Base.show(io::IO, ::MIME"text/plain", r::ZipReader)
         join(io, [print_names[1:lines-6]; "⋮"], "\n  ")
     end
 end
+
+Base.parent(r::ZipReader) = r.buffer
 
 """
     zip_entry_data_offset(r::ZipReader, i::Integer)::Int64
