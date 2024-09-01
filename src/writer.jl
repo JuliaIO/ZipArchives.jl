@@ -275,6 +275,7 @@ Base.write(w::ZipWriter, x::UInt8) = write(w, Ref(x))
 Base.isopen(w::WriteOffsetTracker) = !w.bad
 Base.close(w::WriteOffsetTracker) = nothing # this should never be called
 Base.isreadable(w::WriteOffsetTracker) = false
+Base.write(w::WriteOffsetTracker, x::UInt8) = write(w, Ref(x))
 
 # All writes to the underlying IO go through this function.
 # This enables ZipWriter when using zip_writefile to write to any IO that
