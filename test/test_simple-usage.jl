@@ -61,7 +61,7 @@ using Test: @testset, @test, @test_throws
     # Don't modify `data` while reading it through a ZipReader.
     r = ZipReader(data)
     zip_nentries(r) == 3
-    parent(r) === data
+    @test parent(r) === data
 
     @test zip_names(r) == ["test/test1.txt", "test/empty.txt", "test/test2.txt", "test/compressed.txt"]
     @test zip_name(r, 3) == "test/test2.txt"
