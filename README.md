@@ -87,6 +87,22 @@ ZipWriter(filename) do w
 end
 ```
 
+### Streaming one entry in a large archive file
+If your archive is in a file, `mmap` can be used to treat the file as a `Vector{UInt8}`
+
+An entry can also be opened as an `IO` stream.
+
+```julia
+using ZipArchives: ZipReader, zip_openentry
+using Downloads: download
+using Mmap: mmap
+zip_file_path = download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip");
+archive = ZipReader(mmap(open(zip_file_path)))
+readme_n_lines = zip_openentry(archive, "ZipArchives.jl-main/README.md") do io
+    countlines(io)
+end
+```
+
 ### Supported Compression Methods
 
 | Compression Method | Reading | Writing |
