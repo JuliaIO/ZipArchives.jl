@@ -35,7 +35,7 @@ More details on the file format can be found at https://pkware.cachefly.net/webd
 
 ### Reading Zip archives
 
-Archives can be read from any `AbstractVector{UInt8}` containing the data of a zip archive.
+Archives can be read from any `AbstractVector{UInt8}` containing the data of a Zip archive.
 
 For example, if you download this repo as a ".zip" from GitHub https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip you can read this README in julia.
 
@@ -88,7 +88,7 @@ end
 ```
 
 ### Streaming one entry in a large archive file
-If your archive is in a file, `mmap` can be used to treat the file as a `Vector{UInt8}`
+If your archive is in a file, `mmap` can be used to treat the file as a `Vector{UInt8}`.
 
 An entry in the archive can be opened as an `IO` stream using `zip_openentry`.
 
@@ -151,7 +151,7 @@ ZipArchives currently has the following limitations compared to ZipFile:
 ## Is there an unzip function for a whole archive?
 This package cannot unzip a whole archive to disk with a single function.
 
-This is quite complicated to do in a cross-platform manner that also handles all potential errors or malicious zip archives safely.
+This is quite complicated to do in a cross-platform manner that also handles all potential errors or malicious Zip archives safely.
 
 So this could be done in a separate package that depends on this package. Or using existing well-tested C libraries such as `p7zip_jll`
 
