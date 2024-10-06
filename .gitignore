@@ -5,6 +5,7 @@
 /.vscode/
 
 /test/Manifest.toml
+/benchmark/Manifest.toml
 /Manifest.toml
 fixture.tar.gz
 fixture
