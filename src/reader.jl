@@ -202,8 +202,9 @@ Return the index of the last entry with name `s` or `nothing` if not found.
 zip_findlast_entry(x::HasEntries, s::AbstractString)::Union{Nothing, Int} = zip_findlast_entry(x, String(s))
 function zip_findlast_entry(x::HasEntries, s::String)::Union{Nothing, Int}
     data = codeunits(s)
-    findlast(eachindex(x.entries)) do i
-        _name_view(x, i) == data
+    n = length(data)
+    findlast(x.entries) do e
+        n == length(e.name_range) && view(x.central_dir_buffer, e.name_range) == data
     end
 end
 
