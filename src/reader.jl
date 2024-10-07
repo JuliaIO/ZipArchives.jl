@@ -505,7 +505,10 @@ function parse_central_directory(io::IO)
         end
     end
     # If num_entries is crazy high, avoid allocating crazy amount of memory
-    @argcheck num_entries ≤ central_dir_size>>5
+    # The minimum entry size is 46
+    min_central_dir_size, num_entries_overflow = Base.mul_with_overflow(num_entries, Int64(46))
+    @argcheck !num_entries_overflow
+    @argcheck min_central_dir_size ≤ central_dir_size
     seek(io, central_dir_offset)
     central_dir_buffer::Vector{UInt8} = read(io, central_dir_size)
     @argcheck length(central_dir_buffer) == central_dir_size

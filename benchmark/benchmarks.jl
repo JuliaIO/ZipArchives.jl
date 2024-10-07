@@ -22,3 +22,10 @@ rbench["zip_findlast_entry nothing"] = @benchmarkable zip_findlast_entry($(r), $
 rbench["zip_findlast_entry first"] = @benchmarkable zip_findlast_entry($(r), $(names[begin]))
 rbench["zip_findlast_entry last"] = @benchmarkable zip_findlast_entry($(r), $(names[end]))
 rbench["zip_readentry"] = @benchmarkable zip_readentry($(r), $(1000))
+
+# Reading empty archive
+sink = IOBuffer()
+ZipWriter(sink) do w
+end
+data = take!(sink)
+rbench["empty ZipReader"] = @benchmarkable ZipReader($(data))
