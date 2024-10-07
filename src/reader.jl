@@ -430,20 +430,19 @@ function parse_central_directory(io::IO)
     # total number of entries in the central directory or -1
     num_entries16 = readle(io, UInt16)
     # size of the central directory or -1
-    skip(io, 4)
+    central_dir_size32 = readle(io, UInt32)
     # offset of start of central directory with respect to the starting disk number or -1
     central_dir_offset32 = readle(io, UInt32)
     maybe_eocd64 = (
-        any( ==(-1%UInt16), [
-            disk16,
-            cd_disk16,
-            num_entries_thisdisk16,
-            num_entries16,
-        ]) ||
-        central_dir_offset32 == -1%UInt32
+        disk16                 == -1%UInt16 ||
+        cd_disk16              == -1%UInt16 ||
+        num_entries_thisdisk16 == -1%UInt16 ||
+        num_entries16          == -1%UInt16 ||
+        central_dir_size32     == -1%UInt32 ||
+        central_dir_offset32   == -1%UInt32
     )
     use_eocd64 = maybe_eocd64 && check_EOCD64_used(io, eocd_offset)
-    central_dir_offset::Int64, num_entries::Int64 = let 
+    central_dir_offset::Int64, central_dir_size::Int64, num_entries::Int64 = let 
         if use_eocd64
             # Parse Zip64 end of central directory record
             # Error if not valid
@@ -484,24 +483,32 @@ function parse_central_directory(io::IO)
                 @argcheck num_entries64 == num_entries_thisdisk16
             end
             # size of the central directory
-            skip(io, 8)
+            local central_dir_size64 = readle(io, UInt64)
+            if central_dir_size32 != -1%UInt32
+                @argcheck central_dir_size64 == central_dir_size32
+            end
+            @argcheck central_dir_size64 ≤ eocd64_offset
             # offset of start of central directory with respect to the starting disk number
             local central_dir_offset64 = readle(io, UInt64)
             if central_dir_offset32 != -1%UInt32
                 @argcheck central_dir_offset64 == central_dir_offset32
             end
-            @argcheck central_dir_offset64 ≤ eocd64_offset
-            (Int64(central_dir_offset64), Int64(num_entries64))
+            @argcheck central_dir_offset64 ≤ eocd64_offset - central_dir_size64
+            (Int64(central_dir_offset64), Int64(central_dir_size64), Int64(num_entries64))
         else
             @argcheck disk16 == 0
             @argcheck cd_disk16 == 0
             @argcheck num_entries16 == num_entries_thisdisk16
-            @argcheck central_dir_offset32 ≤ eocd_offset
-            (Int64(central_dir_offset32), Int64(num_entries16))
+            @argcheck central_dir_size32 ≤ eocd_offset
+            @argcheck central_dir_offset32 ≤ eocd_offset - central_dir_size32
+            (Int64(central_dir_offset32), Int64(central_dir_size32), Int64(num_entries16))
         end
     end
+    # If num_entries is crazy high, avoid allocating crazy amount of memory
+    @argcheck num_entries ≤ central_dir_size>>5
     seek(io, central_dir_offset)
-    central_dir_buffer::Vector{UInt8} = read(io)
+    central_dir_buffer::Vector{UInt8} = read(io, central_dir_size)
+    @argcheck length(central_dir_buffer) == central_dir_size
     entries = parse_central_directory_headers!(central_dir_buffer, num_entries)
 
     (;entries, central_dir_buffer, central_dir_offset)
@@ -511,10 +518,9 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
     io_b = InputBuffer(central_dir_buffer)
     seekstart(io_b)
     # parse central directory headers
-    # If num_entries is crazy high, avoid allocating crazy amount of memory
-    @argcheck num_entries ≤ length(central_dir_buffer)>>5
     entries = Vector{EntryInfo}(undef, num_entries)
     for i in 1:num_entries
+        @argcheck bytesavailable(io_b) ≥ 46
         # central file header signature
         @argcheck readle(io_b, UInt32) == 0x02014b50
         version_made = readle(io_b, UInt8)
@@ -535,6 +541,8 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
         internal_attrs = readle(io_b, UInt16)
         external_attrs = readle(io_b, UInt32)
         offset32 = readle(io_b, UInt32)
+        # ensure there is enough room for the variable sized data
+        @argcheck bytesavailable(io_b) ≥ Int64(name_len) + Int64(extras_len) + Int64(comment_len)
         name_start = position(io_b) + 1
         skip(io_b, name_len)
         name_end = position(io_b)
