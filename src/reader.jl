@@ -5,19 +5,27 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
-const ByteArray = Union{
-    Base.CodeUnits{UInt8, String},
-    Vector{UInt8},
-    Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
-    Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}}
-}
+if VERSION ≥ v"1.11"
+    const ByteArray = Union{
+        Base.CodeUnits{UInt8, String},
+        Vector{UInt8},
+        Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
+        Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}},
+        Memory{UInt8},
+        Base.FastContiguousSubArray{UInt8,1,Memory{UInt8}}
+    }
+else
+    const ByteArray = Union{
+        Base.CodeUnits{UInt8, String},
+        Vector{UInt8},
+        Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
+        Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}}
+    }
+end
 
 # version of String(v::AbstractVector{UInt8}) that works consistently.
 function bytes2string(v::AbstractVector{UInt8})::String
-    String(v)
-end
-function bytes2string(v::Vector{UInt8})::String
-    GC.@preserve v unsafe_string(pointer(v), length(v))
+    String(view(v,:))
 end
 
 """

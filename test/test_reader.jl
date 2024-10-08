@@ -306,6 +306,25 @@ end
     @test zip_readentry(r, 1) == codeunits("KYDtLOxn")
 end
 
+if VERSION ≥ v"1.11"
+    @testset "reading from memory" begin
+        io = IOBuffer()
+        ZipWriter(io) do w
+            zip_writefile(w, "foo.txt", codeunits("KYDtLOxn"))
+        end
+        data = take!(io)
+        n = length(data)
+        a = Base.Memory{UInt8}(undef, n)
+        a .= data
+        r = ZipReader(a)
+        @test zip_names(r) == ["foo.txt"]
+        @test zip_readentry(r, 1) == codeunits("KYDtLOxn")
+        r = ZipReader(view(a, 1:length(a)))
+        @test zip_names(r) == ["foo.txt"]
+        @test zip_readentry(r, 1) == codeunits("KYDtLOxn")
+    end
+end
+
 function rewrite_zip(old::AbstractString, new::AbstractString)
     d = mmap(old)
     try
