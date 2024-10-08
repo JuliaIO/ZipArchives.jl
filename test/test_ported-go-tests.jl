@@ -30,6 +30,7 @@ end
         "readme.notzip",
         "test-baddirsz.zip",
         "test-badbase.zip",
+        "comment-truncated.zip",
     ]
 
     for filename in same_content_files

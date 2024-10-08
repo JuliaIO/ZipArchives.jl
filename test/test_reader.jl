@@ -66,7 +66,7 @@ using SHA: sha256
     @test_throws ArgumentError find_eocd(io)
 
     io = IOBuffer("PK\x05\x06"^30000*"ab")
-    @test find_eocd(io) == 100700
+    @test_throws ArgumentError find_eocd(io)
 
     io = IOBuffer("PK\x05\x06"*"\0"^16*"\xff\xff"*"a"^(2^16-1))
     @test find_eocd(io) == 0

@@ -345,40 +345,32 @@ end
 
 # If this fails, io isn't a zip file, io isn't seekable, 
 # or the end of the zip file was corrupted
+# Using yauzl method https://github.com/thejoshwolfe/yauzl/blob/51010ce4e8c7e6345efe195e1b4150518f37b393/index.js#L111-L113
 function find_end_of_central_directory_record(io::IO)::Int64
     seekend(io)
     fsize = position(io)
-    # First assume comment is length zero
     fsize ≥ 22 || throw(ArgumentError("io isn't a zip file. Too small"))
-    seek(io, fsize-22)
-    b = read!(io, zeros(UInt8, 22))
-    check_comment_len_valid(b, comment_len) = (
-        EOCDSig == @view(b[end-21-comment_len:end-18-comment_len]) &&
-        comment_len%UInt8 == b[end-1-comment_len] &&
-        UInt8(comment_len>>8) == b[end-comment_len]
-    )
-    if check_comment_len_valid(b, 0)
-        # No Zip comment fast path
-        fsize-22
-    else
-        # There maybe is a Zip comment slow path
-        fsize > 22 || throw(ArgumentError("io isn't a zip file."))
-        max_comment_len::Int = min(0xFFFF, fsize-22)
-        seek(io, fsize - (max_comment_len+22))
-        b = read!(io, zeros(UInt8, (max_comment_len+22)))
-        comment_len = 1
-        while comment_len < max_comment_len && !check_comment_len_valid(b, comment_len)
-            comment_len += 1
+    for comment_len in 0:Int(min(0xFFFF, fsize-22))
+        seek(io, fsize-22-comment_len)
+        if readle(io, UInt32) != 0x06054b50
+            continue
         end
-        if !check_comment_len_valid(b, comment_len)
+        skip(io, 16)
+        if readle(io, UInt16) == comment_len
+            return fsize-22-comment_len
+        else
             throw(ArgumentError("""
                 io isn't a zip file. 
                 It may be a zip file with a corrupted ending.
                 """
             ))
         end
-        fsize-22-comment_len
     end
+    throw(ArgumentError("""
+        io isn't a zip file. 
+        It may be a zip file with a corrupted ending.
+        """
+    ))
 end
 
 function check_EOCD64_used(io::IO, eocd_offset)::Bool
