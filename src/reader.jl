@@ -40,7 +40,17 @@ function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
 end
 
 function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
-    zip_crc32(collect(data), crc)
+    start::Int64 = firstindex(data)
+    n::Int64 = length(data)
+    offset::Int64 = 0
+    buf = Vector{UInt8}(undef, min(n, Int64(24576)))
+    while offset < n
+        nb = min(n-offset, Int64(24576))
+        copyto!(buf, 1, data, offset + start, nb)
+        crc = zip_crc32(view(buf, 1:nb), crc)
+        offset += nb
+    end
+    crc
 end
 
 @inline readle(io::IO, ::Type{UInt64}) = UInt64(readle(io, UInt32)) | UInt64(readle(io, UInt32))<<32
