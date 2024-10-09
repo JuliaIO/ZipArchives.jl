@@ -56,4 +56,24 @@ using OffsetArrays: Origin
     @test a == [0x62,0x62,0x63]
     @test c == [0x62,0x62,0x63]
     @test s == "abc"
+
+    if VERSION ≥ v"1.11"
+        a = Base.Memory{UInt8}(undef, 3)
+        a .= [0x41,0x42,0x43]
+        s = ZipArchives.bytes2string(a)
+        @test s == "ABC"
+        @test a == [0x41,0x42,0x43]
+        a[1] = 0x43
+        @test s == "ABC"
+        @test a == [0x43,0x42,0x43]
+
+        a = view(Base.Memory{UInt8}(undef, 3), 1:3)
+        a .= [0x41,0x42,0x43]
+        s = ZipArchives.bytes2string(a)
+        @test s == "ABC"
+        @test a == [0x41,0x42,0x43]
+        a[1] = 0x43
+        @test s == "ABC"
+        @test a == [0x43,0x42,0x43]
+    end
 end

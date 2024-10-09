@@ -440,3 +440,31 @@ end
     r = ZipReader(take!(out))
     @test zip_readentry(r, "data.txt") == 0x01:0x0f
 end
+
+if VERSION ≥ v"1.11"
+    @testset "zip_writefile on memory" begin
+        data = [0x41,0x42,0x43]
+        a = Base.Memory{UInt8}(undef, 3)
+        a .= data
+        @test zip_crc32(data) == zip_crc32(a)
+        out = IOBuffer()
+        ZipWriter(out) do w
+            zip_writefile(w, "data.txt", a)
+        end
+        r = ZipReader(take!(out))
+        @test zip_readentry(r, "data.txt") == data
+    end
+    @testset "zip_writefile on view of memory" begin
+        data = [0x41,0x42,0x43]
+        m = Base.Memory{UInt8}(undef, 3)
+        m .= data
+        a = view(m, :)
+        @test zip_crc32(data) == zip_crc32(a)
+        out = IOBuffer()
+        ZipWriter(out) do w
+            zip_writefile(w, "data.txt", a)
+        end
+        r = ZipReader(take!(out))
+        @test zip_readentry(r, "data.txt") == data
+    end
+end
