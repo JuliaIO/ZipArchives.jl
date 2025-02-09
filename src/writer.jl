@@ -208,14 +208,18 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     else
         Store
     end
-    codec, level_bits = if real_compression_method==Store
+    codec, level_bits = if real_compression_method == Store
         (Noop(), UInt16(0))
-    elseif real_compression_method==Deflate
+    elseif real_compression_method == Deflate
         @argcheck compression_level ∈ (-1:9)
-        (
-            DeflateCompressor(;level = compression_level),
-            deflate_level_bits(compression_level),
-        )
+        old_compressor_cache = w.compressor_cache
+        if isnothing(old_compressor_cache) || old_compressor_cache[2] != compression_level
+            deflate_codec = DeflateCompressor(;level = compression_level)
+            w.compressor_cache = (deflate_codec, compression_level)
+        else
+            deflate_codec = something(old_compressor_cache)[1]
+        end
+        (deflate_codec, deflate_level_bits(compression_level))
     else
         throw(ArgumentError("compression_method must be Deflate or Store"))
     end
@@ -330,14 +334,9 @@ function zip_commitfile(w::ZipWriter)
         # If some error happens, the file will be partially written,
         # but not included in the central directory.
         # Finish the compressing here, but don't close underlying IO.
-        try
-            write(transcoder, TranscodingStreams.TOKEN_END)
-            # early exit incase io is broken
-            w._io.bad && throw_bad_io()
-        finally
-            # Prevent memory leak maybe.
-            close(transcoder)
-        end
+        write(transcoder, TranscodingStreams.TOKEN_END)
+        # early exit incase io is broken
+        w._io.bad && throw_bad_io()
         cur_offset = w._io.offset
         pe.compressed_size = cur_offset - pe.offset - pe.local_header_size
 
@@ -382,12 +381,7 @@ function zip_abortfile(w::ZipWriter)
         w.transcoder = nothing
         w.partial_entry = nothing
         # Finish the compressing here, but don't close underlying IO.
-        try
-            write(transcoder, TranscodingStreams.TOKEN_END)
-        finally
-            # Prevent memory leak maybe.
-            close(transcoder)
-        end
+        write(transcoder, TranscodingStreams.TOKEN_END)
     end
     nothing
 end
@@ -518,6 +512,7 @@ function Base.close(w::ZipWriter)
             zip_commitfile(w)
         finally
             w.partial_entry = nothing
+            w.compressor_cache = nothing
             try
                 write_footer(w._io, w.entries, w.central_dir_buffer; w.force_zip64)
             finally
