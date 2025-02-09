@@ -123,14 +123,14 @@ include("external_unzippers.jl")
     end
 end
 
-if VERSION ≥ v"1.7.0" # ZipStreams requires julia 1.7
+if VERSION ≥ v"1.11.0" # ZipStreams requires julia 1.11
     @testset "Writer compat with ZipStreams" begin
         # setup test env for ZipStreams
         worker = Malt.Worker()
         Malt.remote_eval_fetch(worker, quote
             import Pkg
             Pkg.activate(;temp=true)
-            Pkg.add(name="ZipStreams", version="2.2.0")
+            Pkg.add(name="ZipStreams", version="3.0.0")
             import ZipStreams
             nothing
         end)
@@ -140,7 +140,7 @@ if VERSION ≥ v"1.7.0" # ZipStreams requires julia 1.7
             dir = ZipReader(read(zippath))
             Malt.remote_eval_fetch(worker, quote
                 ZipStreams.zipsource($(zippath)) do zs
-                    ZipStreams.validate(zs)
+                    ZipStreams.is_valid!(zs) || error("archive not valid")
                 end
                 nothing
             end)
@@ -151,7 +151,7 @@ if VERSION ≥ v"1.7.0" # ZipStreams requires julia 1.7
             for i in 1:zip_nentries(dir)
                 name, data = Malt.remote_eval_fetch(worker, quote
                     f = ZipStreams.next_file(zs)
-                    (f.info.name, read(f,String))
+                    (ZipStreams.info(f).name, read(f,String))
                 end)
                 @test zip_readentry(dir, name, String) == data
             end

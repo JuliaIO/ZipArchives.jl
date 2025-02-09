@@ -277,7 +277,6 @@ Base.write(w::ZipWriter, x::UInt8) = write(w, Ref(x))
 
 # WriteOffsetTracker
 Base.isopen(w::WriteOffsetTracker) = !w.bad
-Base.close(w::WriteOffsetTracker) = nothing # this protects the underlying stream from being closed by TranscodingStreams
 Base.isreadable(w::WriteOffsetTracker) = false
 Base.write(w::WriteOffsetTracker, x::UInt8) = write(w, Ref(x))
 
