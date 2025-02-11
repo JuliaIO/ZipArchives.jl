@@ -79,6 +79,9 @@ mutable struct ZipWriter{S<:IO} <: IO
     used_stripped_dir_names::Set{String}
     check_names::Bool
     transcoder::Union{Nothing, NoopStream{WriteOffsetTracker{S}}, DeflateCompressorStream{WriteOffsetTracker{S}}}
+
+    "Cached codec and compression level to avoid allocations"
+    compressor_cache::Union{Nothing, Tuple{DeflateCompressor, Int}}
     function ZipWriter(io::IO;
             check_names::Bool=true,
             own_io::Bool=false,
@@ -96,6 +99,7 @@ mutable struct ZipWriter{S<:IO} <: IO
             Set{String}(),
             Set{String}(),
             check_names,
+            nothing,
             nothing,
         )
     end
