@@ -66,7 +66,7 @@ using Test: @testset, @test, @test_throws
     @test zip_names(r) == ["test/test1.txt", "test/empty.txt", "test/test2.txt", "test/compressed.txt"]
     @test zip_name(r, 3) == "test/test2.txt"
 
-    @test zip_readentry(r, 1, String) == "I am data inside test1.txt in the zip file"
+    @test zip_readentry(r, 1) == codeunits("I am data inside test1.txt in the zip file")
     # zip_openentry and zip_readentry can also open the last matching entry by name.
     @test zip_readentry(r, "test/test1.txt", String) == "I am data inside test1.txt in the zip file"
     @test_throws ArgumentError("entry with name \"test1.txt\" not found") zip_readentry(r, "test1.txt", String)
