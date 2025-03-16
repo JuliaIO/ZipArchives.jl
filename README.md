@@ -51,6 +51,11 @@ Check the names in the archive.
 zip_names(archive)
 ```
 
+Read the entire contents this README file as a `Vector{UInt8}`
+```julia
+zip_readentry(archive, "ZipArchives.jl-main/README.md")
+```
+
 Print this README file.
 ```julia
 zip_readentry(archive, "ZipArchives.jl-main/README.md", String) |> print
@@ -138,12 +143,13 @@ Currently, ZipArchives has the following benefits over ZipFile:
 4. Files can be marked as executable. Permissions are handled like in https://github.com/JuliaIO/Tar.jl#permissions
 5. By default when writing an archive, entry names are checked to avoid some common issues if the archive is extracted on Windows.
 6. Ability to append to an existing zip archive, in an `IO` or in a file on disk.
+7. [Faster file writing](https://github.com/felipenoris/XLSX.jl/pull/266).
+8. [No garbage collection bugs](https://github.com/fhs/ZipFile.jl/issues/14).
 
 ZipArchives currently has the following limitations compared to ZipFile:
 1. No way to specify the modification time, times are set to 1980-01-01 00:00:00 DOS date time.
 2. No `flush` function for `ZipWriter`. `close` and `zip_append_archive` can be used instead.
-3. Requires at least Julia 1.6.
-4. No way to read an archive from an `IOStream`, `mmap` can be used instead.
+3. No way to read an archive from an `IOStream`, `mmap` can be used instead.
 
 
 
