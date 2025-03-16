@@ -167,6 +167,43 @@ if VERSION ≥ v"1.11.0" # ZipStreams requires julia 1.11
     end
 end
 
+if VERSION ≥ v"1.8.0" # LibZip requires julia 1.8
+    @testset "Writer compat with LibZip" begin
+        # setup test env for ZipStreams
+        worker = Malt.Worker()
+        Malt.remote_eval_fetch(worker, quote
+            import Pkg
+            Pkg.activate(;temp=true)
+            Pkg.add(name="LibZip", version="1.0.1")
+            import LibZip
+            nothing
+        end)
+        for filename in readdir(tmp)
+            endswith(filename, ".zip") || continue
+            zippath = joinpath(tmp, filename)
+            dir = ZipReader(read(zippath))
+            local n = zip_nentries(dir)
+            @test n == Malt.remote_eval_fetch(worker, quote
+                archive = LibZip.ZipArchive(read($(zippath)); flags = LibZip.LIBZIP_RDONLY | LibZip.LIBZIP_CHECKCONS)
+                length(archive)
+            end)
+            for i in 1:n
+                name, data = Malt.remote_eval_fetch(worker, quote
+                    name = unsafe_string(LibZip.zip_get_file_info(archive, $(i)-1).name)
+                    data = read(archive, name)
+                    (name, data)
+                end)
+                @test zip_name(dir, i) == name
+                @test zip_readentry(dir, i) == data
+            end
+            Malt.remote_eval_fetch(worker, quote
+                close(archive)
+                nothing
+            end)
+        end
+    end
+end
+
 @testset "Writer compat with ZipFile" begin
     for filename in readdir(tmp)
         endswith(filename, ".zip") || continue
