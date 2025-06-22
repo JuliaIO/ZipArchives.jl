@@ -6,8 +6,13 @@ using p7zip_jll: p7zip_jll
 using OffsetArrays: Origin
 using SHA: sha256
 
-@testset "find_end_of_central_directory_record unit tests" begin
-    find_eocd = ZipArchives.find_end_of_central_directory_record
+@testset "parse_end_of_central_directory_record unit tests" begin
+    function find_eocd(io)
+        seekend(io)
+        fsize = position(io)
+        eocd = ZipArchives.parse_end_of_central_directory_record(io, fsize)
+        fsize - 22 - eocd.comment_len
+    end
     io = IOBuffer(b"")
     @test_throws ArgumentError("io isn't a zip file. Too small") find_eocd(io)
 
