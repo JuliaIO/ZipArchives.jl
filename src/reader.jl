@@ -58,7 +58,7 @@ end
 @inline readle(io::IO, ::Type{UInt16}) = UInt16(read(io, UInt8)) | UInt16(read(io, UInt8))<<8
 @inline readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
 
-@inline readle(v, offset, ::Type{UInt64}) = UInt64(readle(v, offset, UInt32)) | UInt64(readle(v, offset+4, UInt32))<<32
+# @inline readle(v, offset, ::Type{UInt64}) = UInt64(readle(v, offset, UInt32)) | UInt64(readle(v, offset+4, UInt32))<<32
 @inline readle(v, offset, ::Type{UInt32}) = UInt32(readle(v, offset, UInt16)) | UInt32(readle(v, offset+2, UInt16))<<16
 @inline readle(v, offset, ::Type{UInt16}) = UInt16(readle(v, offset, UInt8 )) | UInt16(readle(v, offset+1, UInt8 ))<<8
 @inline readle(v, offset, ::Type{UInt8}) = v[begin+offset]

@@ -201,7 +201,7 @@ end
         b"PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0R\0\0\0\0\0\0\0?\0\0\0\0\0\0\0"; # Zip64 end of central directory record
         rand(UInt8, 1000000); # Junk data
         b"PK\x06\a\0\0\0\0\x91\0\0\0\0\0\0\0\x01\0\0\0"; # Zip64 end of central directory locator
-        b"PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0?\0\0\0\0\0"; # End of central directory record
+        b"PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0\xff\xff\xff\xff\0\0"; # End of central directory record
     ]
     r = ZipReader(zip_data)
     @test zip_names(r) == ["test"]
