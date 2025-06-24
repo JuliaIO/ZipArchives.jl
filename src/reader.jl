@@ -58,6 +58,25 @@ end
 @inline readle(io::IO, ::Type{UInt16}) = UInt16(read(io, UInt8)) | UInt16(read(io, UInt8))<<8
 @inline readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
 
+# @inline readle(v, offset, ::Type{UInt64}) = UInt64(readle(v, offset, UInt32)) | UInt64(readle(v, offset+4, UInt32))<<32
+@inline readle(v, offset, ::Type{UInt32}) = UInt32(readle(v, offset, UInt16)) | UInt32(readle(v, offset+2, UInt16))<<16
+@inline readle(v, offset, ::Type{UInt16}) = UInt16(readle(v, offset, UInt8 )) | UInt16(readle(v, offset+1, UInt8 ))<<8
+@inline readle(v, offset, ::Type{UInt8}) = v[begin+offset]
+
+function getchunk(io::IO, offset, size)
+    seek(io, offset)
+    out = read(io, size)
+    if length(out) != size
+        error("short read")
+    end
+    out
+end
+function getchunk(io::InputBuffer{<:ByteArray}, offset, size)
+    data = parent(io)
+    start = firstindex(data)+offset
+    view(data, start:start+size-1)
+end
+
 #=
 Return the minimum size of a local header for an entry.
 =#
@@ -360,50 +379,173 @@ function zip_readentry(r::ZipReader, i::Union{AbstractString, Integer}, ::Type{S
     bytes2string(zip_readentry(r, i))
 end
 
+struct EOCDRecord
+    "number of this disk, or -1"
+    disk16::UInt16
+
+    "number of the disk with the start of the central directory or -1"
+    cd_disk16::UInt16
+
+    "total number of entries in the central directory on this disk"
+    num_entries_thisdisk16::UInt16
+
+    "total number of entries in the central directory or -1"
+    num_entries16::UInt16
+
+    "size of the central directory or -1"
+    central_dir_size32::UInt32
+
+    "offset of start of central directory with respect to the starting disk number or -1"
+    central_dir_offset32::UInt32
+
+    "The length of the comment for this .ZIP file."
+    comment_len::UInt16
+end
 
 # If this fails, io isn't a zip file, io isn't seekable, 
 # or the end of the zip file was corrupted
 # Using yauzl method https://github.com/thejoshwolfe/yauzl/blob/51010ce4e8c7e6345efe195e1b4150518f37b393/index.js#L111-L113
-function find_end_of_central_directory_record(io::IO)::Int64
-    seekend(io)
-    fsize = position(io)
-    fsize ≥ 22 || throw(ArgumentError("io isn't a zip file. Too small"))
-    for comment_len in 0:Int(min(0xFFFF, fsize-22))
-        seek(io, fsize-22-comment_len)
-        if readle(io, UInt32) != 0x06054b50
-            continue
+function parse_end_of_central_directory_record(io::IO, fsize)::EOCDRecord
+    min_eocd_len = 22
+    fsize ≥ min_eocd_len || throw(ArgumentError("io isn't a zip file. Too small"))
+    chunk = getchunk(io, fsize-min_eocd_len, min_eocd_len)
+    eocd_chunk = if readle(chunk, 0, UInt32) == 0x06054b50
+        @view(chunk[begin+4:end])
+    else
+        max_comment_len = min(0xFFFF, fsize-22)
+        max_eocd_len = max_comment_len + min_eocd_len
+        chunk = getchunk(io, fsize-max_eocd_len, max_eocd_len)
+        comment_len = -1
+        for i in 1:max_comment_len
+            if readle(chunk, max_comment_len-i, UInt32) == 0x06054b50
+                comment_len = i
+                break
+            end
         end
-        skip(io, 16)
-        if readle(io, UInt16) == comment_len
-            return fsize-22-comment_len
-        else
+        if comment_len == -1
             throw(ArgumentError("""
                 io isn't a zip file. 
                 It may be a zip file with a corrupted ending.
                 """
             ))
         end
+        @view(chunk[begin+max_comment_len-comment_len+4:end])
     end
-    throw(ArgumentError("""
-        io isn't a zip file. 
-        It may be a zip file with a corrupted ending.
-        """
-    ))
+    eocd = EOCDRecord(
+        readle(eocd_chunk, 0, UInt16),
+        readle(eocd_chunk, 2, UInt16),
+        readle(eocd_chunk, 4, UInt16),
+        readle(eocd_chunk, 6, UInt16),
+        readle(eocd_chunk, 8, UInt32),
+        readle(eocd_chunk, 12, UInt32),
+        readle(eocd_chunk, 16, UInt16),
+    )
+    if eocd.comment_len + 18 != length(eocd_chunk)
+        throw(ArgumentError("""
+            io isn't a zip file. 
+            It may be a zip file with a corrupted ending.
+            """
+        ))
+    end
+    # Only one disk with num 0 is supported.
+    if eocd.disk16 != -1%UInt16
+        @argcheck eocd.disk16 == 0
+    end
+    if eocd.cd_disk16 != -1%UInt16
+        @argcheck eocd.cd_disk16 == 0
+    end
+    eocd
 end
 
-function check_EOCD64_used(io::IO, eocd_offset)::Bool
-    # Verify that ZIP64 end of central directory is used
+function parse_EOCD64(io::IO, fsize, eocd::EOCDRecord)::NTuple{3,Int64}
+    eocd_offset = fsize - 22 - eocd.comment_len
+    (
+        eocd.disk16                 == -1%UInt16 ||
+        eocd.cd_disk16              == -1%UInt16 ||
+        eocd.num_entries_thisdisk16 == -1%UInt16 ||
+        eocd.num_entries16          == -1%UInt16 ||
+        eocd.central_dir_size32     == -1%UInt32 ||
+        eocd.central_dir_offset32   == -1%UInt32
+    ) || @goto nonzip64
+    # Parse the ZIP64 end of central directory record
     # It may be that one of the values just happens to be -1
-    eocd_offset ≥ 56+20 || return false
-    seek(io, eocd_offset - 20)
-    readle(io, UInt32) == 0x07064b50 || return false
-    skip(io, 4)
-    maybe_eocd64_offset = readle(io, UInt64)
-    readle(io, UInt32) ≤ 1 || return false # total number of disks
-    maybe_eocd64_offset ≤ eocd_offset - (56+20) || return false
-    seek(io, maybe_eocd64_offset)
-    readle(io, UInt32) == 0x06064b50 || return false
-    return true
+    # so on some errors @goto nonzip64
+    eocd_offset ≥ 56+20 || @goto nonzip64
+    # Optimistically try to read both the zip64 end of central directory record
+    # and the zip64 end of central directory locator
+    # the zip64 extensible data sector may be huge requiring a latter read.
+    chunk_offset = eocd_offset - (56+20)
+    chunk = getchunk(io, chunk_offset, 56+20)
+    locator_io = InputBuffer(@view(chunk[begin+56:end]))
+    readle(locator_io, UInt32) == 0x07064b50 || @goto nonzip64
+    # number of the disk with the start of the zip64 end of central directory
+    # Only one disk with num 0 is supported.
+    readle(locator_io, UInt32) == 0 || @goto nonzip64
+    eocd64_offset = readle(locator_io, UInt64)
+    total_num_disks = readle(locator_io, UInt32)
+    total_num_disks ≤ 1 || @goto nonzip64
+    eocd64_offset ≤ eocd_offset - (56+20) || @goto nonzip64
+    record_io = if eocd64_offset == chunk_offset
+        # The record is already in chunk
+        InputBuffer(chunk)
+    elseif eocd64_offset < chunk_offset
+        # read in a new chunk, there may be data in the zip64 extensible data sector
+        InputBuffer(getchunk(io, eocd64_offset, 56))
+    else
+        @goto nonzip64
+    end
+    # zip64 end of central dir signature
+    readle(record_io, UInt32) == 0x06064b50 || @goto nonzip64
+
+    # Parse Zip64 end of central directory record
+    # At this point error if not valid
+
+    # size of zip64 end of central directory record
+    skip(record_io, 8)
+    # version made by
+    skip(record_io, 2)
+    # version needed to extract
+    # This is set to 62 if version 2 of ZIP64 is used
+    # This is not supported yet.
+    version_needed = readle(record_io, UInt16) & 0x00FF
+    @argcheck version_needed < 62
+    # number of this disk
+    @argcheck readle(record_io, UInt32) == 0
+    # number of the disk with the start of the central directory
+    @argcheck readle(record_io, UInt32) == 0
+    # total number of entries in the central directory on this disk
+    num_entries_thisdisk64 = readle(record_io, UInt64)
+    # total number of entries in the central directory
+    num_entries64 = readle(record_io, UInt64)
+    @argcheck num_entries64 == num_entries_thisdisk64
+    if eocd.num_entries16 != -1%UInt16
+        @argcheck num_entries64 == eocd.num_entries16
+    end
+    if eocd.num_entries_thisdisk16 != -1%UInt16
+        @argcheck num_entries64 == eocd.num_entries_thisdisk16
+    end
+    # size of the central directory
+    central_dir_size64 = readle(record_io, UInt64)
+    if eocd.central_dir_size32 != -1%UInt32
+        @argcheck central_dir_size64 == eocd.central_dir_size32
+    end
+    @argcheck central_dir_size64 ≤ eocd64_offset
+    # offset of start of central directory with respect to the starting disk number
+    central_dir_offset64 = readle(record_io, UInt64)
+    if eocd.central_dir_offset32 != -1%UInt32
+        @argcheck central_dir_offset64 == eocd.central_dir_offset32
+    end
+    @argcheck central_dir_offset64 ≤ eocd64_offset - central_dir_size64
+    return (Int64(central_dir_offset64), Int64(central_dir_size64), Int64(num_entries64))
+    @label nonzip64
+    begin
+        @argcheck eocd.disk16 == 0
+        @argcheck eocd.cd_disk16 == 0
+        @argcheck eocd.num_entries16 == eocd.num_entries_thisdisk16
+        @argcheck eocd.central_dir_size32 ≤ eocd_offset
+        @argcheck eocd.central_dir_offset32 ≤ eocd_offset - eocd.central_dir_size32
+        return (Int64(eocd.central_dir_offset32), Int64(eocd.central_dir_size32), Int64(eocd.num_entries16))
+    end
 end
 
 """
@@ -418,102 +560,15 @@ The central directory is after all entry data.
 
 """
 function parse_central_directory(io::IO)
+    seekend(io)
+    fsize = position(io)
     # 1st find end of central dir section
-    eocd_offset::Int64 = find_end_of_central_directory_record(io)
+    eocd = parse_end_of_central_directory_record(io, fsize)
+    
     # 2nd find where the central dir is and 
     # how many entries there are.
     # This is confusing because of ZIP64 and disk number weirdness.
-    seek(io, eocd_offset+4)
-    # number of this disk, or -1
-    disk16 = readle(io, UInt16)
-    # number of the disk with the start of the central directory or -1
-    cd_disk16 = readle(io, UInt16)
-    # Only one disk with num 0 is supported.
-    if disk16 != -1%UInt16
-        @argcheck disk16 == 0
-    end
-    if cd_disk16 != -1%UInt16
-        @argcheck cd_disk16 == 0
-    end
-    # total number of entries in the central directory on this disk or -1
-    num_entries_thisdisk16 = readle(io, UInt16)
-    # total number of entries in the central directory or -1
-    num_entries16 = readle(io, UInt16)
-    # size of the central directory or -1
-    central_dir_size32 = readle(io, UInt32)
-    # offset of start of central directory with respect to the starting disk number or -1
-    central_dir_offset32 = readle(io, UInt32)
-    maybe_eocd64 = (
-        disk16                 == -1%UInt16 ||
-        cd_disk16              == -1%UInt16 ||
-        num_entries_thisdisk16 == -1%UInt16 ||
-        num_entries16          == -1%UInt16 ||
-        central_dir_size32     == -1%UInt32 ||
-        central_dir_offset32   == -1%UInt32
-    )
-    use_eocd64 = maybe_eocd64 && check_EOCD64_used(io, eocd_offset)
-    central_dir_offset::Int64, central_dir_size::Int64, num_entries::Int64 = let 
-        if use_eocd64
-            # Parse Zip64 end of central directory record
-            # Error if not valid
-            seek(io, eocd_offset - 20)
-            # zip64 end of central dir locator signature
-            @argcheck readle(io, UInt32) == 0x07064b50
-            # number of the disk with the start of the zip64 end of central directory
-            # Only one disk with num 0 is supported.
-            @argcheck readle(io, UInt32) == 0
-            local eocd64_offset = readle(io, UInt64)
-            local total_num_disks = readle(io, UInt32)
-            @argcheck total_num_disks ≤ 1
-            seek(io, eocd64_offset)
-            # zip64 end of central dir signature
-            @argcheck readle(io, UInt32) == 0x06064b50
-            # size of zip64 end of central directory record
-            skip(io, 8)
-            # version made by
-            skip(io, 2)
-            # version needed to extract
-            # This is set to 62 if version 2 of ZIP64 is used
-            # This is not supported yet.
-            local version_needed = readle(io, UInt16) & 0x00FF
-            @argcheck version_needed < 62
-            # number of this disk
-            @argcheck readle(io, UInt32) == 0
-            # number of the disk with the start of the central directory
-            @argcheck readle(io, UInt32) == 0
-            # total number of entries in the central directory on this disk
-            local num_entries_thisdisk64 = readle(io, UInt64)
-            # total number of entries in the central directory
-            local num_entries64 = readle(io, UInt64)
-            @argcheck num_entries64 == num_entries_thisdisk64
-            if num_entries16 != -1%UInt16
-                @argcheck num_entries64 == num_entries16
-            end
-            if num_entries_thisdisk16 != -1%UInt16
-                @argcheck num_entries64 == num_entries_thisdisk16
-            end
-            # size of the central directory
-            local central_dir_size64 = readle(io, UInt64)
-            if central_dir_size32 != -1%UInt32
-                @argcheck central_dir_size64 == central_dir_size32
-            end
-            @argcheck central_dir_size64 ≤ eocd64_offset
-            # offset of start of central directory with respect to the starting disk number
-            local central_dir_offset64 = readle(io, UInt64)
-            if central_dir_offset32 != -1%UInt32
-                @argcheck central_dir_offset64 == central_dir_offset32
-            end
-            @argcheck central_dir_offset64 ≤ eocd64_offset - central_dir_size64
-            (Int64(central_dir_offset64), Int64(central_dir_size64), Int64(num_entries64))
-        else
-            @argcheck disk16 == 0
-            @argcheck cd_disk16 == 0
-            @argcheck num_entries16 == num_entries_thisdisk16
-            @argcheck central_dir_size32 ≤ eocd_offset
-            @argcheck central_dir_offset32 ≤ eocd_offset - central_dir_size32
-            (Int64(central_dir_offset32), Int64(central_dir_size32), Int64(num_entries16))
-        end
-    end
+    central_dir_offset::Int64, central_dir_size::Int64, num_entries::Int64 = parse_EOCD64(io, fsize, eocd)
     # If num_entries is crazy high, avoid allocating crazy amount of memory
     # The minimum entry size is 46
     min_central_dir_size, num_entries_overflow = Base.mul_with_overflow(num_entries, Int64(46))
@@ -767,28 +822,30 @@ function zip_entry_data_offset(r::ZipReader, i::Int)::Int64
     fsize::Int64 = length(r.buffer)
     entry::EntryInfo = r.entries[i]
     compressed_size::Int64 = entry.compressed_size
+    local_header_offset::Int64 = entry.offset
+    name_len::Int64 = length(entry.name_range)
+    method = entry.method
     validate_entry(entry, fsize)
     io = InputBuffer(r.buffer)
-    local_header_offset::Int64 = entry.offset
-    method = entry.method
+    chunk = getchunk(io, local_header_offset, 30 + name_len)
     # read and validate local header
-    seek(io, local_header_offset)
-    @argcheck readle(io, UInt32) == 0x04034b50
-    skip(io, 4)
-    @argcheck readle(io, UInt16) == method
-    skip(io, 4*4)
-    local_name_len = readle(io, UInt16)
-    @argcheck local_name_len == length(entry.name_range)
-    extra_len = readle(io, UInt16)
+    header_io = InputBuffer(chunk)
+    @argcheck readle(header_io, UInt32) == 0x04034b50
+    skip(header_io, 4)
+    @argcheck readle(header_io, UInt16) == method
+    skip(header_io, 4*4)
+    local_name_len = readle(header_io, UInt16)
+    @argcheck local_name_len == name_len
+    extra_len = readle(header_io, UInt16)
 
-    actual_local_header_size::Int64 = 30 + extra_len + local_name_len
+    actual_local_header_size::Int64 = 30 + extra_len + name_len
     entry_data_offset::Int64 = local_header_offset + actual_local_header_size
     # make sure this doesn't overflow
     @argcheck entry_data_offset > local_header_offset
     @argcheck compressed_size ≤ fsize
     @argcheck entry_data_offset ≤ fsize - compressed_size
 
-    @argcheck read(io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
+    @argcheck @view(chunk[begin+30 : end]) == view(r.central_dir_buffer, entry.name_range)
 
     entry_data_offset
 end
