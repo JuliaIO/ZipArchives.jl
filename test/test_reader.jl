@@ -6,8 +6,13 @@ using p7zip_jll: p7zip_jll
 using OffsetArrays: Origin
 using SHA: sha256
 
-@testset "find_end_of_central_directory_record unit tests" begin
-    find_eocd = ZipArchives.find_end_of_central_directory_record
+@testset "parse_end_of_central_directory_record unit tests" begin
+    function find_eocd(io)
+        seekend(io)
+        fsize = position(io)
+        eocd = ZipArchives.parse_end_of_central_directory_record(io, fsize)
+        fsize - 22 - eocd.comment_len
+    end
     io = IOBuffer(b"")
     @test_throws ArgumentError("io isn't a zip file. Too small") find_eocd(io)
 
@@ -187,6 +192,21 @@ end
     @test zip_names(r) == ["test.txt"]
     zip_test_entry(r, 1)
     @test zip_readentry(r, 1, String) == "This is just an example text file.\n"
+end
+
+@testset "reading file with gap between zip64 record and zip64 locator" begin
+    zip_data = UInt8[
+        b"PK\x03\x04-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0\x14\0test\x01\0\x10\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0file data";
+        b"PK\x01\x02?\x03-\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\0 \0\0\0\xff\xff\0\0\0\0\xa4\x81\xff\xff\xff\xfftest\x01\0\x1c\0\t\0\0\0\0\0\0\0\t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+        b"PK\x06\x06,\0\0\0\0\0\0\0?\x03-\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0R\0\0\0\0\0\0\0?\0\0\0\0\0\0\0"; # Zip64 end of central directory record
+        rand(UInt8, 1000000); # Junk data
+        b"PK\x06\a\0\0\0\0\x91\0\0\0\0\0\0\0\x01\0\0\0"; # Zip64 end of central directory locator
+        b"PK\x05\x06\0\0\0\0\x01\0\x01\0R\0\0\0\xff\xff\xff\xff\0\0"; # End of central directory record
+    ]
+    r = ZipReader(zip_data)
+    @test zip_names(r) == ["test"]
+    zip_test_entry(r, 1)
+    @test zip_readentry(r, 1, String) == "file data"
 end
 
 @testset "seeking uncompressed entry" begin
