@@ -63,7 +63,7 @@ end
 @inline readle(v, offset, ::Type{UInt16}) = UInt16(readle(v, offset, UInt8 )) | UInt16(readle(v, offset+1, UInt8 ))<<8
 @inline readle(v, offset, ::Type{UInt8}) = v[begin+offset]
 
-function get_buffer!(io::IO, offset, size)
+function getchunk(io::IO, offset, size)
     seek(io, offset)
     out = read(io, size)
     if length(out) != size
@@ -71,7 +71,7 @@ function get_buffer!(io::IO, offset, size)
     end
     out
 end
-function get_buffer!(io::InputBuffer{<:ByteArray}, offset, size)
+function getchunk(io::InputBuffer{<:ByteArray}, offset, size)
     data = parent(io)
     start = firstindex(data)+offset
     view(data, start:start+size-1)
@@ -408,13 +408,13 @@ end
 function parse_end_of_central_directory_record(io::IO, fsize)::EOCDRecord
     min_eocd_len = 22
     fsize ≥ min_eocd_len || throw(ArgumentError("io isn't a zip file. Too small"))
-    chunk = get_buffer!(io, fsize-min_eocd_len, min_eocd_len)
+    chunk = getchunk(io, fsize-min_eocd_len, min_eocd_len)
     eocd_chunk = if readle(chunk, 0, UInt32) == 0x06054b50
         @view(chunk[begin+4:end])
     else
         max_comment_len = min(0xFFFF, fsize-22)
         max_eocd_len = max_comment_len + min_eocd_len
-        chunk = get_buffer!(io, fsize-max_eocd_len, max_eocd_len)
+        chunk = getchunk(io, fsize-max_eocd_len, max_eocd_len)
         comment_len = -1
         for i in 1:max_comment_len
             if readle(chunk, max_comment_len-i, UInt32) == 0x06054b50
@@ -475,7 +475,7 @@ function parse_EOCD64(io::IO, fsize, eocd::EOCDRecord)::NTuple{3,Int64}
     # and the zip64 end of central directory locator
     # the zip64 extensible data sector may be huge requiring a latter read.
     chunk_offset = eocd_offset - (56+20)
-    chunk = get_buffer!(io, chunk_offset, 56+20)
+    chunk = getchunk(io, chunk_offset, 56+20)
     locator_io = InputBuffer(@view(chunk[begin+56:end]))
     readle(locator_io, UInt32) == 0x07064b50 || @goto nonzip64
     # number of the disk with the start of the zip64 end of central directory
@@ -490,7 +490,7 @@ function parse_EOCD64(io::IO, fsize, eocd::EOCDRecord)::NTuple{3,Int64}
         InputBuffer(chunk)
     elseif eocd64_offset < chunk_offset
         # read in a new chunk, there may be data in the zip64 extensible data sector
-        InputBuffer(get_buffer!(io, eocd64_offset, 56))
+        InputBuffer(getchunk(io, eocd64_offset, 56))
     else
         @goto nonzip64
     end
@@ -827,7 +827,7 @@ function zip_entry_data_offset(r::ZipReader, i::Int)::Int64
     method = entry.method
     validate_entry(entry, fsize)
     io = InputBuffer(r.buffer)
-    chunk = get_buffer!(io, local_header_offset, 30 + name_len)
+    chunk = getchunk(io, local_header_offset, 30 + name_len)
     # read and validate local header
     header_io = InputBuffer(chunk)
     @argcheck readle(header_io, UInt32) == 0x04034b50
