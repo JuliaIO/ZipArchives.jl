@@ -51,7 +51,7 @@ function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
     while offset < n
         nb = min(n-offset, Int64(24576))
         copyto!(buf, Int64(1), data, offset + start, nb)
-        crc = zip_crc32(view(buf, 1:nb), crc)
+        crc = zip_crc32(view(buf, 1:Int(nb)), crc)
         offset += nb
     end
     crc
