@@ -5,8 +5,8 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
-# currently unsafe_convert fails on BigInt, so plain `AbstractUnitRange` can't be used
-const FastByteView{P <: AbstractVector{UInt8}} = SubArray{UInt8, 1, P, <:Tuple{AbstractUnitRange{<:Union{Int32, Int64}}}, true}
+# currently unsafe_convert fails on some AbstractUnitRange{<:Integer}, so plain `AbstractUnitRange` can't be used
+const FastByteView{P <: AbstractVector{UInt8}} = SubArray{UInt8, 1, P, <:Tuple{AbstractUnitRange{Int}}, true}
 
 if VERSION ≥ v"1.11"
     const ByteArray = Union{
@@ -284,7 +284,7 @@ function zip_test_entry(r::ZipReader, i::Integer)::Nothing
             @argcheck uncompressed_size < typemax(Int64)
             uncompressed_size += nb
             @argcheck uncompressed_size ≤ saved_uncompressed_size
-            real_crc32 = zip_crc32(view(buffer, 1:nb), real_crc32)
+            real_crc32 = zip_crc32(view(buffer, 1:Int(nb)), real_crc32)
         end
         @argcheck uncompressed_size === saved_uncompressed_size
         @argcheck saved_crc32 == real_crc32
