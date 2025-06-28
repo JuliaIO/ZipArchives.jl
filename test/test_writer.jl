@@ -463,9 +463,10 @@ end
 @testset "crc32 of views of arrays with non Int indexes" begin
     data = rand(UInt8, 1000)
     r = zip_crc32(data[2:90])
-    for T in (BigInt, UInt64, Int64)
+    for T in (BigInt, UInt64, Int64, UInt32, Int32, UInt8)
         @test r == zip_crc32(view(data, T(2):T(90)))
     end
+    @test zip_crc32(view(data, :)) == zip_crc32(data)
 end
 
 @testset "zip_writefile on non dense arrays" begin

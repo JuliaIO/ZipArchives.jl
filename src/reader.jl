@@ -5,21 +5,24 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
+# currently unsafe_convert fails on BigInt, so plain `AbstractUnitRange` can't be used
+const FastByteView{P <: AbstractVector{UInt8}} = SubArray{UInt8, 1, P, <:Tuple{AbstractUnitRange{<:Union{Int32, Int64}}}, true}
+
 if VERSION ≥ v"1.11"
     const ByteArray = Union{
         Base.CodeUnits{UInt8, String},
         Vector{UInt8},
-        Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
-        Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}},
+        FastByteView{Base.CodeUnits{UInt8,String}}, 
+        FastByteView{Vector{UInt8}},
         Memory{UInt8},
-        Base.FastContiguousSubArray{UInt8,1,Memory{UInt8}}
+        FastByteView{Memory{UInt8}}
     }
 else
     const ByteArray = Union{
         Base.CodeUnits{UInt8, String},
         Vector{UInt8},
-        Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
-        Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}}
+        FastByteView{Base.CodeUnits{UInt8,String}},
+        FastByteView{Vector{UInt8}}
     }
 end
 
@@ -36,7 +39,8 @@ Return the standard zip CRC32 checksum of data
 See also [`zip_stored_crc32`](@ref), [`zip_test_entry`](@ref).
 """
 function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
-    GC.@preserve data unsafe_crc32(pointer(data, Int(firstindex(data))), UInt(length(data)), crc)
+    cconv_data = Base.cconvert(Ptr{UInt8}, data)
+    GC.@preserve cconv_data unsafe_crc32(Base.unsafe_convert(Ptr{UInt8}, cconv_data), UInt(length(data)), crc)
 end
 
 function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
@@ -46,7 +50,7 @@ function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
     buf = Vector{UInt8}(undef, min(n, Int64(24576)))
     while offset < n
         nb = min(n-offset, Int64(24576))
-        copyto!(buf, 1, data, offset + start, nb)
+        copyto!(buf, Int64(1), data, offset + start, nb)
         crc = zip_crc32(view(buf, 1:nb), crc)
         offset += nb
     end
@@ -274,14 +278,13 @@ function zip_test_entry(r::ZipReader, i::Integer)::Nothing
     zip_openentry(r, i) do io
         real_crc32::UInt32 = 0
         uncompressed_size::UInt64 = 0
-        buffer_size = 1<<12
-        buffer = zeros(UInt8, buffer_size)
+        buffer = zeros(UInt8, 1<<14)
         GC.@preserve buffer while !eof(io)
             nb = readbytes!(io, buffer)
             @argcheck uncompressed_size < typemax(Int64)
             uncompressed_size += nb
             @argcheck uncompressed_size ≤ saved_uncompressed_size
-            real_crc32 = unsafe_crc32(pointer(buffer), UInt(nb), real_crc32)
+            real_crc32 = zip_crc32(view(buffer, 1:nb), real_crc32)
         end
         @argcheck uncompressed_size === saved_uncompressed_size
         @argcheck saved_crc32 == real_crc32
