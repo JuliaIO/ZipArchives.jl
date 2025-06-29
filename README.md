@@ -4,6 +4,7 @@
 [![CI](https://github.com/JuliaIO/ZipArchives.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/JuliaIO/ZipArchives.jl/actions/workflows/CI.yml)
 [![codecov](https://codecov.io/gh/JuliaIO/ZipArchives.jl/branch/main/graph/badge.svg?token=K3J0T9BZ42)](https://codecov.io/gh/JuliaIO/ZipArchives.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![deps](https://juliahub.com/docs/General/ZipArchives/stable/deps.svg)](https://juliahub.com/ui/Packages/General/ZipArchives?t=2)
 
 Read and write Zip archives in Julia.
 
