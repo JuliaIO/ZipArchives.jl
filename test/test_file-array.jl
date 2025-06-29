@@ -64,8 +64,12 @@ using Test: @testset, @test
     end
 
     archive = ZipReader(FileArray(fname))
+
     # validate all the checksums
     zip_test(archive)
+
+    # `zip_openentry` is used to stream data from the entry as an `IO`.
+    # This works with both compressed and uncompressed entries.
     zip_openentry(archive, "test/compressed.txt") do io
         @test countlines(io) == 2000
     end
