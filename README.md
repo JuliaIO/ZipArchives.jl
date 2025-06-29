@@ -4,6 +4,7 @@
 [![CI](https://github.com/JuliaIO/ZipArchives.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/JuliaIO/ZipArchives.jl/actions/workflows/CI.yml)
 [![codecov](https://codecov.io/gh/JuliaIO/ZipArchives.jl/branch/main/graph/badge.svg?token=K3J0T9BZ42)](https://codecov.io/gh/JuliaIO/ZipArchives.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![deps](https://juliahub.com/docs/General/ZipArchives/stable/deps.svg)](https://juliahub.com/ui/Packages/General/ZipArchives?t=2)
 
 Read and write Zip archives in Julia.
 
@@ -93,20 +94,10 @@ end
 ```
 
 ### Streaming one entry in a large archive file
-If your archive is in a file, `mmap` can be used to treat the file as a `Vector{UInt8}`.
+If your archive is in a larger than memory file, `Mmap.jl`
+or a custom struct can be used to treat the file as a `AbstractVector{UInt8}`.
 
-An entry in the archive can be opened as an `IO` stream using `zip_openentry`.
-
-```julia
-using ZipArchives: ZipReader, zip_openentry
-using Downloads: download
-using Mmap: mmap
-zip_file_path = download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip");
-archive = ZipReader(mmap(open(zip_file_path)))
-readme_n_lines = zip_openentry(archive, "ZipArchives.jl-main/README.md") do io
-    countlines(io)
-end
-```
+See [test/test_file-array.jl](https://github.com/JuliaIO/ZipArchives.jl/blob/main/test/test_file-array.jl) for an example.
 
 ### Supported Compression Methods
 
@@ -120,7 +111,7 @@ end
 
 1. Cannot directly extract all files in an archive and write those files to disk.
 1. Ignores time stamps.
-1. Cannot write an archive fully in streaming mode. See https://github.com/madler/zipflow if you need this functionality.
+1. Cannot write an archive fully in streaming mode. See https://github.com/madler/zipflow or https://github.com/reallyasi9/ZipStreams.jl if you need this functionality.
 1. Encryption and decryption are not supported.
 1. Multi disk archives not supported.
 1. Cannot recover data from a corrupted archive. Especially if the end of the archive is corrupted.
@@ -149,9 +140,16 @@ Currently, ZipArchives has the following benefits over ZipFile:
 ZipArchives currently has the following limitations compared to ZipFile:
 1. No way to specify the modification time, times are set to 1980-01-01 00:00:00 DOS date time.
 2. No `flush` function for `ZipWriter`. `close` and `zip_append_archive` can be used instead.
-3. No way to read an archive from an `IOStream`, `mmap` can be used instead.
+3. No way to read an archive from an `IOStream`, instead `Mmap.jl` or a custom struct can be used to treat the file as a `AbstractVector{UInt8}`. Example in [test/test_file-array.jl](https://github.com/JuliaIO/ZipArchives.jl/blob/main/test/test_file-array.jl).
 
+### [ZipStreams](https://github.com/reallyasi9/ZipStreams.jl)
 
+Unlike ZipArchives, ZipStreams is able to read from non-seekable streams, but may fail to correctly 
+read some pathological archives.
+
+### [LibZip](https://github.com/bhftbootcamp/LibZip.jl)
+
+LibZip is a wrapper of the [libzip C library](https://github.com/nih-at/libzip) which supports encryption and decryption.
 
 
 ## Is there an unzip function for a whole archive?
