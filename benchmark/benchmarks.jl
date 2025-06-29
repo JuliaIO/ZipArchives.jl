@@ -1,7 +1,6 @@
 using BenchmarkTools
 using Random
 using ZipArchives
-using Mmap
 
 const SUITE = BenchmarkGroup()
 rbench = SUITE["reading"] = BenchmarkGroup()
@@ -92,6 +91,6 @@ r = ZipReader(FileArray(fname))
 rfbench["ZipReader FileArray"] = @benchmarkable ZipReader(FileArray($(fname)))
 rfbench["zip_test FileArray"] = @benchmarkable zip_test($(r))
 
-r = ZipReader(Mmap.mmap(open(fname)))
-rfbench["ZipReader Mmap"] = @benchmarkable ZipReader(Mmap.mmap(open($(fname))))
-rfbench["zip_test Mmap"] = @benchmarkable zip_test($(r))
+r = ZipReader(read(fname))
+rfbench["ZipReader read"] = @benchmarkable ZipReader(read($(fname)))
+rfbench["zip_test read"] = @benchmarkable zip_test($(r))
