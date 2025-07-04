@@ -279,7 +279,7 @@ function zip_test_entry(r::ZipReader, i::Integer)::Nothing
         real_crc32::UInt32 = 0
         uncompressed_size::UInt64 = 0
         buffer = zeros(UInt8, 1<<14)
-        GC.@preserve buffer while !eof(io)
+        while !eof(io)
             nb = readbytes!(io, buffer)
             @argcheck uncompressed_size < typemax(Int64)
             uncompressed_size += nb
