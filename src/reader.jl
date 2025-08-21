@@ -310,15 +310,30 @@ function zip_test(r::ZipReader)::Nothing
 end
 
 """
-    zip_openentry(r::ZipReader, i::Union{AbstractString, Integer})
+    zip_openentry(r::ZipReader, i::Union{AbstractString, Integer})::IO
     zip_openentry(f::Function, r::ZipReader, i::Union{AbstractString, Integer})
 
 Open entry `i` from `r` as a readable IO.
 
 If `i` is a string open the last entry with the exact matching name.
 
-Make sure to close the returned stream when done reading, 
-if not using the do block method.
+# Usage
+
+Close the returned stream when done, or use the `do`-block form which closes it:
+
+```julia
+io = zip_openentry(r, "file.txt")
+nlines = try
+    countlines(io)
+finally
+    close(io)
+end
+
+nlines = zip_openentry(r, "file.txt") do io
+    countlines(io)
+end
+# `io` closed automatically
+```
 
 The stream returned by this function
 should only be accessed by one thread at a time.
@@ -751,14 +766,25 @@ number of entries in the archive.
 
 `zip_names(r::ZipReader)::Vector{String}` returns the names of all the entries in the archive.
 
-The following get information about an entry in the archive:
+The following functions get information about an entry in the archive:
 
 Entries are indexed from `1:zip_nentries(r)`
 
-1. `zip_name(r::ZipReader, i::Integer)::String`
-1. `zip_uncompressed_size(r::ZipReader, i::Integer)::UInt64`
+1. `zip_name(r, i)::String`
+1. `zip_readentry(r, i)::Vector{UInt8}`
+1. `zip_isdir(r, i)::Bool`
+1. `zip_uncompressed_size(r, i)::UInt64`
+1. `zip_compressed_size(r, i)::UInt64`
+1. `zip_compression_method(r, i)::UInt16`
+1. `zip_entry_data_offset(r, i)::Int64`
+1. `zip_stored_crc32(r, i)::UInt32`
+1. `zip_comment(r, i)::String`
+1. `zip_isexecutablefile(r, i)::Bool`
+1. `zip_definitely_utf8(r, i)::Bool`
+1. `zip_iscompressed(r, i)::Bool`
+1. `zip_general_purpose_bit_flag(r, i)::UInt16`
 
-`zip_test_entry(r::ZipReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
+`zip_test_entry(r::ZipReader, i::Integer)::Nothing` will throw an error if an entry is invalid or has a bad checksum.
 
 `zip_openentry` and `zip_readentry` can be used to read data from an entry.
 
