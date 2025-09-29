@@ -9,7 +9,9 @@ Random.seed!(1234)
 
 
 # @test Any[] == detect_ambiguities(Base, Core, ZipArchives)
+include("test_bytes2string.jl")
 include("test_simple-usage.jl")
+include("test_file-array.jl")
 include("test_filename-checks.jl")
 include("test_show.jl")
 include("test_writer.jl")

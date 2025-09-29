@@ -1,6 +1,6 @@
 [fixture]
-git-tree-sha1 = "6ab9957b72056a0c388b056305a24d9742cfb840"
+git-tree-sha1 = "ed34b433321060f64bbdbda044851336788b9af6"
 
     [[fixture.download]]
-    url = "https://github.com/medyan-dev/ZipArchives.jl/releases/download/v0.2.1/fixture.tar.gz"
-    sha256 = "a0505b18c35455b7163060355401ed722b9fdcd177bf2f93ab5e696f758d9507"
+    sha256 = "99a9bb1d9cba1fae77fd7be224b654da1f247815845ef4ac682a546e8dc70ceb"
+    url = "https://github.com/JuliaIO/ZipArchives.jl/releases/download/v2.1.6/fixture.tar.gz"

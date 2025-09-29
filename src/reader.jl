@@ -5,12 +5,31 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
-const ByteArray = Union{
-    Base.CodeUnits{UInt8, String},
-    Vector{UInt8},
-    Base.FastContiguousSubArray{UInt8,1,Base.CodeUnits{UInt8,String}}, 
-    Base.FastContiguousSubArray{UInt8,1,Vector{UInt8}}
-}
+# currently unsafe_convert fails on some AbstractUnitRange{<:Integer}, so plain `AbstractUnitRange` can't be used
+const FastByteView{P <: AbstractVector{UInt8}} = SubArray{UInt8, 1, P, <:Tuple{AbstractUnitRange{Int}}, true}
+
+if VERSION ≥ v"1.11"
+    const ByteArray = Union{
+        Base.CodeUnits{UInt8, String},
+        Vector{UInt8},
+        FastByteView{Base.CodeUnits{UInt8,String}}, 
+        FastByteView{Vector{UInt8}},
+        Memory{UInt8},
+        FastByteView{Memory{UInt8}}
+    }
+else
+    const ByteArray = Union{
+        Base.CodeUnits{UInt8, String},
+        Vector{UInt8},
+        FastByteView{Base.CodeUnits{UInt8,String}},
+        FastByteView{Vector{UInt8}}
+    }
+end
+
+# version of String(v::AbstractVector{UInt8}) that works consistently.
+function bytes2string(v::AbstractVector{UInt8})::String
+    String(view(v,:))
+end
 
 """
     zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
@@ -20,19 +39,47 @@ Return the standard zip CRC32 checksum of data
 See also [`zip_stored_crc32`](@ref), [`zip_test_entry`](@ref).
 """
 function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
-    GC.@preserve data unsafe_crc32(pointer(data), UInt(length(data)), crc)
+    cconv_data = Base.cconvert(Ptr{UInt8}, data)
+    GC.@preserve cconv_data unsafe_crc32(Base.unsafe_convert(Ptr{UInt8}, cconv_data), UInt(length(data)), crc)
 end
 
 function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
-    zip_crc32(collect(data), crc)
+    start::Int64 = firstindex(data)
+    n::Int64 = length(data)
+    offset::Int64 = 0
+    buf = Vector{UInt8}(undef, min(n, Int64(24576)))
+    while offset < n
+        nb = min(n-offset, Int64(24576))
+        copyto!(buf, Int64(1), data, offset + start, nb)
+        crc = zip_crc32(view(buf, 1:Int(nb)), crc)
+        offset += nb
+    end
+    crc
 end
 
-# Copied from ZipFile.jl
-readle(io::IO, ::Type{UInt64}) = htol(read(io, UInt64))
-readle(io::IO, ::Type{UInt32}) = htol(read(io, UInt32))
-readle(io::IO, ::Type{UInt16}) = htol(read(io, UInt16))
-readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
+@inline readle(io::IO, ::Type{UInt64}) = UInt64(readle(io, UInt32)) | UInt64(readle(io, UInt32))<<32
+@inline readle(io::IO, ::Type{UInt32}) = UInt32(readle(io, UInt16)) | UInt32(readle(io, UInt16))<<16
+@inline readle(io::IO, ::Type{UInt16}) = UInt16(read(io, UInt8)) | UInt16(read(io, UInt8))<<8
+@inline readle(io::IO, ::Type{UInt8}) = read(io, UInt8)
 
+# @inline readle(v, offset, ::Type{UInt64}) = UInt64(readle(v, offset, UInt32)) | UInt64(readle(v, offset+4, UInt32))<<32
+@inline readle(v, offset, ::Type{UInt32}) = UInt32(readle(v, offset, UInt16)) | UInt32(readle(v, offset+2, UInt16))<<16
+@inline readle(v, offset, ::Type{UInt16}) = UInt16(readle(v, offset, UInt8 )) | UInt16(readle(v, offset+1, UInt8 ))<<8
+@inline readle(v, offset, ::Type{UInt8}) = v[begin+offset]
+
+function getchunk(io::IO, offset, size)
+    seek(io, offset)
+    out = read(io, size)
+    if length(out) != size
+        error("short read")
+    end
+    out
+end
+function getchunk(io::InputBuffer{<:ByteArray}, offset, size)
+    data = parent(io)
+    start = firstindex(data)+offset
+    view(data, start:start+size-1)
+end
 
 #=
 Return the minimum size of a local header for an entry.
@@ -40,15 +87,14 @@ Return the minimum size of a local header for an entry.
 min_local_header_size(entry::EntryInfo)::Int64 = 30 + length(entry.name_range)
 
 """
-    const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
+    const HasEntries = Union{ZipReader, ZipWriter}
 """
-const HasEntries = Union{ZipFileReader, ZipWriter, ZipBufferReader}
+const HasEntries = Union{ZipReader, ZipWriter}
 
 """
-    const ZipReader = Union{ZipFileReader, ZipBufferReader}
+    const ZipBufferReader = ZipReader
 """
-const ZipReader = Union{ZipFileReader, ZipBufferReader}
-
+const ZipBufferReader = ZipReader
 
 # Getters
 """
@@ -65,7 +111,7 @@ Return the name of entry `i`.
 
 `i` can range from `1:zip_nentries(x)`
 """
-zip_name(x::HasEntries, i::Integer)::String = String(_name_view(x, i))
+zip_name(x::HasEntries, i::Integer)::String = bytes2string(_name_view(x, i))
 
 """
     zip_names(x::HasEntries)::Vector{String}
@@ -93,6 +139,29 @@ Note: if the zip file was corrupted, this might be wrong.
 zip_compressed_size(x::HasEntries, i::Integer)::UInt64 = x.entries[i].compressed_size
 
 """
+    zip_compression_method(x::HasEntries, i::Integer)::UInt16
+
+Return the compression method used for entry `i`.
+
+See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT for a current list of methods.
+
+Only Store(0), Deflate(8), and Deflate64(9) are supported for now.
+
+Note: if the zip file was corrupted, this might be wrong.
+"""
+zip_compression_method(x::HasEntries, i::Integer)::UInt16 = x.entries[i].method
+
+"""
+    zip_general_purpose_bit_flag(x::HasEntries, i::Integer)::UInt16
+
+Return the general purpose bit flag for entry `i`.
+
+See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT 
+for a description of the bits.
+"""
+zip_general_purpose_bit_flag(x::HasEntries, i::Integer)::UInt16 = x.entries[i].bit_flags
+
+"""
     zip_iscompressed(x::HasEntries, i::Integer)::Bool
 
 Return if entry `i` is marked as compressed.
@@ -104,7 +173,7 @@ zip_iscompressed(x::HasEntries, i::Integer)::Bool = x.entries[i].method != Store
 
 Return the comment attached to entry `i`
 """
-zip_comment(x::HasEntries, i::Integer)::String = String(view(x.central_dir_buffer, x.entries[i].comment_range))
+zip_comment(x::HasEntries, i::Integer)::String = bytes2string(view(x.central_dir_buffer, x.entries[i].comment_range))
 
 """
     zip_stored_crc32(x::HasEntries, i::Integer)::UInt32
@@ -174,8 +243,9 @@ Return the index of the last entry with name `s` or `nothing` if not found.
 zip_findlast_entry(x::HasEntries, s::AbstractString)::Union{Nothing, Int} = zip_findlast_entry(x, String(s))
 function zip_findlast_entry(x::HasEntries, s::String)::Union{Nothing, Int}
     data = codeunits(s)
-    findlast(eachindex(x.entries)) do i
-        _name_view(x, i) == data
+    n = length(data)
+    findlast(x.entries) do e
+        n == length(e.name_range) && view(x.central_dir_buffer, e.name_range) == data
     end
 end
 
@@ -208,14 +278,13 @@ function zip_test_entry(r::ZipReader, i::Integer)::Nothing
     zip_openentry(r, i) do io
         real_crc32::UInt32 = 0
         uncompressed_size::UInt64 = 0
-        buffer_size = 1<<12
-        buffer = zeros(UInt8, buffer_size)
-        GC.@preserve buffer while !eof(io)
+        buffer = zeros(UInt8, 1<<14)
+        while !eof(io)
             nb = readbytes!(io, buffer)
             @argcheck uncompressed_size < typemax(Int64)
             uncompressed_size += nb
             @argcheck uncompressed_size ≤ saved_uncompressed_size
-            real_crc32 = unsafe_crc32(pointer(buffer), UInt(nb), real_crc32)
+            real_crc32 = zip_crc32(view(buffer, 1:Int(nb)), real_crc32)
         end
         @argcheck uncompressed_size === saved_uncompressed_size
         @argcheck saved_crc32 == real_crc32
@@ -223,17 +292,48 @@ function zip_test_entry(r::ZipReader, i::Integer)::Nothing
     nothing
 end
 
+"""
+    zip_test(r::ZipReader)::Nothing
+
+Test all entries in the archive in order from `1` to `zip_nentries(r)`
+Throw an error for the first invalid entry.
+"""
+function zip_test(r::ZipReader)::Nothing
+    for i in 1:zip_nentries(r)
+        try
+            zip_test_entry(r, i)
+        catch
+            error("entry $(i): $(repr(zip_name(r, i))) is invalid")
+        end
+    end
+    nothing
+end
 
 """
-    zip_openentry(r::ZipReader, i::Union{AbstractString, Integer})
+    zip_openentry(r::ZipReader, i::Union{AbstractString, Integer})::IO
     zip_openentry(f::Function, r::ZipReader, i::Union{AbstractString, Integer})
 
 Open entry `i` from `r` as a readable IO.
 
 If `i` is a string open the last entry with the exact matching name.
 
-Make sure to close the returned stream when done reading, 
-if not using the do block method.
+# Usage
+
+Close the returned stream when done, or use the `do`-block form which closes it:
+
+```julia
+io = zip_openentry(r, "file.txt")
+nlines = try
+    countlines(io)
+finally
+    close(io)
+end
+
+nlines = zip_openentry(r, "file.txt") do io
+    countlines(io)
+end
+# `io` closed automatically
+```
 
 The stream returned by this function
 should only be accessed by one thread at a time.
@@ -294,61 +394,176 @@ function zip_readentry(r::ZipReader, s::AbstractString)
 end
 
 function zip_readentry(r::ZipReader, i::Union{AbstractString, Integer}, ::Type{String})
-    String(zip_readentry(r, i))
+    bytes2string(zip_readentry(r, i))
 end
 
+struct EOCDRecord
+    "number of this disk, or -1"
+    disk16::UInt16
+
+    "number of the disk with the start of the central directory or -1"
+    cd_disk16::UInt16
+
+    "total number of entries in the central directory on this disk"
+    num_entries_thisdisk16::UInt16
+
+    "total number of entries in the central directory or -1"
+    num_entries16::UInt16
+
+    "size of the central directory or -1"
+    central_dir_size32::UInt32
+
+    "offset of start of central directory with respect to the starting disk number or -1"
+    central_dir_offset32::UInt32
+
+    "The length of the comment for this .ZIP file."
+    comment_len::UInt16
+end
 
 # If this fails, io isn't a zip file, io isn't seekable, 
 # or the end of the zip file was corrupted
-function find_end_of_central_directory_record(io::IO)::Int64
-    seekend(io)
-    fsize = position(io)
-    # First assume comment is length zero
-    fsize ≥ 22 || throw(ArgumentError("io isn't a zip file. Too small"))
-    seek(io, fsize-22)
-    b = read!(io, zeros(UInt8, 22))
-    check_comment_len_valid(b, comment_len) = (
-        EOCDSig == @view(b[end-21-comment_len:end-18-comment_len]) &&
-        comment_len%UInt8 == b[end-1-comment_len] &&
-        UInt8(comment_len>>8) == b[end-comment_len]
-    )
-    if check_comment_len_valid(b, 0)
-        # No Zip comment fast path
-        fsize-22
+# Using yauzl method https://github.com/thejoshwolfe/yauzl/blob/51010ce4e8c7e6345efe195e1b4150518f37b393/index.js#L111-L113
+function parse_end_of_central_directory_record(io::IO, fsize)::EOCDRecord
+    min_eocd_len = 22
+    fsize ≥ min_eocd_len || throw(ArgumentError("io isn't a zip file. Too small"))
+    chunk = getchunk(io, fsize-min_eocd_len, min_eocd_len)
+    eocd_chunk = if readle(chunk, 0, UInt32) == 0x06054b50
+        @view(chunk[begin+4:end])
     else
-        # There maybe is a Zip comment slow path
-        fsize > 22 || throw(ArgumentError("io isn't a zip file."))
-        max_comment_len::Int = min(0xFFFF, fsize-22)
-        seek(io, fsize - (max_comment_len+22))
-        b = read!(io, zeros(UInt8, (max_comment_len+22)))
-        comment_len = 1
-        while comment_len < max_comment_len && !check_comment_len_valid(b, comment_len)
-            comment_len += 1
+        max_comment_len = min(0xFFFF, fsize-22)
+        max_eocd_len = max_comment_len + min_eocd_len
+        chunk = getchunk(io, fsize-max_eocd_len, max_eocd_len)
+        comment_len = -1
+        for i in 1:max_comment_len
+            if readle(chunk, max_comment_len-i, UInt32) == 0x06054b50
+                comment_len = i
+                break
+            end
         end
-        if !check_comment_len_valid(b, comment_len)
+        if comment_len == -1
             throw(ArgumentError("""
                 io isn't a zip file. 
                 It may be a zip file with a corrupted ending.
                 """
             ))
         end
-        fsize-22-comment_len
+        @view(chunk[begin+max_comment_len-comment_len+4:end])
     end
+    eocd = EOCDRecord(
+        readle(eocd_chunk, 0, UInt16),
+        readle(eocd_chunk, 2, UInt16),
+        readle(eocd_chunk, 4, UInt16),
+        readle(eocd_chunk, 6, UInt16),
+        readle(eocd_chunk, 8, UInt32),
+        readle(eocd_chunk, 12, UInt32),
+        readle(eocd_chunk, 16, UInt16),
+    )
+    if eocd.comment_len + 18 != length(eocd_chunk)
+        throw(ArgumentError("""
+            io isn't a zip file. 
+            It may be a zip file with a corrupted ending.
+            """
+        ))
+    end
+    # Only one disk with num 0 is supported.
+    if eocd.disk16 != -1%UInt16
+        @argcheck eocd.disk16 == 0
+    end
+    if eocd.cd_disk16 != -1%UInt16
+        @argcheck eocd.cd_disk16 == 0
+    end
+    eocd
 end
 
-function check_EOCD64_used(io::IO, eocd_offset)::Bool
-    # Verify that ZIP64 end of central directory is used
+function parse_EOCD64(io::IO, fsize, eocd::EOCDRecord)::NTuple{3,Int64}
+    eocd_offset = fsize - 22 - eocd.comment_len
+    (
+        eocd.disk16                 == -1%UInt16 ||
+        eocd.cd_disk16              == -1%UInt16 ||
+        eocd.num_entries_thisdisk16 == -1%UInt16 ||
+        eocd.num_entries16          == -1%UInt16 ||
+        eocd.central_dir_size32     == -1%UInt32 ||
+        eocd.central_dir_offset32   == -1%UInt32
+    ) || @goto nonzip64
+    # Parse the ZIP64 end of central directory record
     # It may be that one of the values just happens to be -1
-    eocd_offset ≥ 56+20 || return false
-    seek(io, eocd_offset - 20)
-    readle(io, UInt32) == 0x07064b50 || return false
-    skip(io, 4)
-    maybe_eocd64_offset = readle(io, UInt64)
-    readle(io, UInt32) ≤ 1 || return false # total number of disks
-    maybe_eocd64_offset ≤ eocd_offset - (56+20) || return false
-    seek(io, maybe_eocd64_offset)
-    readle(io, UInt32) == 0x06064b50 || return false
-    return true
+    # so on some errors @goto nonzip64
+    eocd_offset ≥ 56+20 || @goto nonzip64
+    # Optimistically try to read both the zip64 end of central directory record
+    # and the zip64 end of central directory locator
+    # the zip64 extensible data sector may be huge requiring a latter read.
+    chunk_offset = eocd_offset - (56+20)
+    chunk = getchunk(io, chunk_offset, 56+20)
+    locator_io = InputBuffer(@view(chunk[begin+56:end]))
+    readle(locator_io, UInt32) == 0x07064b50 || @goto nonzip64
+    # number of the disk with the start of the zip64 end of central directory
+    # Only one disk with num 0 is supported.
+    readle(locator_io, UInt32) == 0 || @goto nonzip64
+    eocd64_offset = readle(locator_io, UInt64)
+    total_num_disks = readle(locator_io, UInt32)
+    total_num_disks ≤ 1 || @goto nonzip64
+    eocd64_offset ≤ eocd_offset - (56+20) || @goto nonzip64
+    record_io = if eocd64_offset == chunk_offset
+        # The record is already in chunk
+        InputBuffer(chunk)
+    elseif eocd64_offset < chunk_offset
+        # read in a new chunk, there may be data in the zip64 extensible data sector
+        InputBuffer(getchunk(io, eocd64_offset, 56))
+    else
+        @goto nonzip64
+    end
+    # zip64 end of central dir signature
+    readle(record_io, UInt32) == 0x06064b50 || @goto nonzip64
+
+    # Parse Zip64 end of central directory record
+    # At this point error if not valid
+
+    # size of zip64 end of central directory record
+    skip(record_io, 8)
+    # version made by
+    skip(record_io, 2)
+    # version needed to extract
+    # This is set to 62 if version 2 of ZIP64 is used
+    # This is not supported yet.
+    version_needed = readle(record_io, UInt16) & 0x00FF
+    @argcheck version_needed < 62
+    # number of this disk
+    @argcheck readle(record_io, UInt32) == 0
+    # number of the disk with the start of the central directory
+    @argcheck readle(record_io, UInt32) == 0
+    # total number of entries in the central directory on this disk
+    num_entries_thisdisk64 = readle(record_io, UInt64)
+    # total number of entries in the central directory
+    num_entries64 = readle(record_io, UInt64)
+    @argcheck num_entries64 == num_entries_thisdisk64
+    if eocd.num_entries16 != -1%UInt16
+        @argcheck num_entries64 == eocd.num_entries16
+    end
+    if eocd.num_entries_thisdisk16 != -1%UInt16
+        @argcheck num_entries64 == eocd.num_entries_thisdisk16
+    end
+    # size of the central directory
+    central_dir_size64 = readle(record_io, UInt64)
+    if eocd.central_dir_size32 != -1%UInt32
+        @argcheck central_dir_size64 == eocd.central_dir_size32
+    end
+    @argcheck central_dir_size64 ≤ eocd64_offset
+    # offset of start of central directory with respect to the starting disk number
+    central_dir_offset64 = readle(record_io, UInt64)
+    if eocd.central_dir_offset32 != -1%UInt32
+        @argcheck central_dir_offset64 == eocd.central_dir_offset32
+    end
+    @argcheck central_dir_offset64 ≤ eocd64_offset - central_dir_size64
+    return (Int64(central_dir_offset64), Int64(central_dir_size64), Int64(num_entries64))
+    @label nonzip64
+    begin
+        @argcheck eocd.disk16 == 0
+        @argcheck eocd.cd_disk16 == 0
+        @argcheck eocd.num_entries16 == eocd.num_entries_thisdisk16
+        @argcheck eocd.central_dir_size32 ≤ eocd_offset
+        @argcheck eocd.central_dir_offset32 ≤ eocd_offset - eocd.central_dir_size32
+        return (Int64(eocd.central_dir_offset32), Int64(eocd.central_dir_size32), Int64(eocd.num_entries16))
+    end
 end
 
 """
@@ -363,113 +578,35 @@ The central directory is after all entry data.
 
 """
 function parse_central_directory(io::IO)
+    seekend(io)
+    fsize = position(io)
     # 1st find end of central dir section
-    eocd_offset::Int64 = find_end_of_central_directory_record(io)
+    eocd = parse_end_of_central_directory_record(io, fsize)
+    
     # 2nd find where the central dir is and 
     # how many entries there are.
     # This is confusing because of ZIP64 and disk number weirdness.
-    seek(io, eocd_offset+4)
-    # number of this disk, or -1
-    disk16 = readle(io, UInt16)
-    # number of the disk with the start of the central directory or -1
-    cd_disk16 = readle(io, UInt16)
-    # Only one disk with num 0 is supported.
-    if disk16 != -1%UInt16
-        @argcheck disk16 == 0
-    end
-    if cd_disk16 != -1%UInt16
-        @argcheck cd_disk16 == 0
-    end
-    # total number of entries in the central directory on this disk or -1
-    num_entries_thisdisk16 = readle(io, UInt16)
-    # total number of entries in the central directory or -1
-    num_entries16 = readle(io, UInt16)
-    # size of the central directory or -1
-    skip(io, 4)
-    # offset of start of central directory with respect to the starting disk number or -1
-    central_dir_offset32 = readle(io, UInt32)
-    maybe_eocd64 = (
-        any( ==(-1%UInt16), [
-            disk16,
-            cd_disk16,
-            num_entries_thisdisk16,
-            num_entries16,
-        ]) ||
-        central_dir_offset32 == -1%UInt32
-    )
-    use_eocd64 = maybe_eocd64 && check_EOCD64_used(io, eocd_offset)
-    central_dir_offset::Int64, num_entries::Int64 = let 
-        if use_eocd64
-            # Parse Zip64 end of central directory record
-            # Error if not valid
-            seek(io, eocd_offset - 20)
-            # zip64 end of central dir locator signature
-            @argcheck readle(io, UInt32) == 0x07064b50
-            # number of the disk with the start of the zip64 end of central directory
-            # Only one disk with num 0 is supported.
-            @argcheck readle(io, UInt32) == 0
-            local eocd64_offset = readle(io, UInt64)
-            local total_num_disks = readle(io, UInt32)
-            @argcheck total_num_disks ≤ 1
-            seek(io, eocd64_offset)
-            # zip64 end of central dir signature
-            @argcheck readle(io, UInt32) == 0x06064b50
-            # size of zip64 end of central directory record
-            skip(io, 8)
-            # version made by
-            skip(io, 2)
-            # version needed to extract
-            # This is set to 62 if version 2 of ZIP64 is used
-            # This is not supported yet.
-            local version_needed = readle(io, UInt16) & 0x00FF
-            @argcheck version_needed < 62
-            # number of this disk
-            @argcheck readle(io, UInt32) == 0
-            # number of the disk with the start of the central directory
-            @argcheck readle(io, UInt32) == 0
-            # total number of entries in the central directory on this disk
-            local num_entries_thisdisk64 = readle(io, UInt64)
-            # total number of entries in the central directory
-            local num_entries64 = readle(io, UInt64)
-            @argcheck num_entries64 == num_entries_thisdisk64
-            if num_entries16 != -1%UInt16
-                @argcheck num_entries64 == num_entries16
-            end
-            if num_entries_thisdisk16 != -1%UInt16
-                @argcheck num_entries64 == num_entries_thisdisk16
-            end
-            # size of the central directory
-            skip(io, 8)
-            # offset of start of central directory with respect to the starting disk number
-            local central_dir_offset64 = readle(io, UInt64)
-            if central_dir_offset32 != -1%UInt32
-                @argcheck central_dir_offset64 == central_dir_offset32
-            end
-            @argcheck central_dir_offset64 ≤ eocd64_offset
-            (Int64(central_dir_offset64), Int64(num_entries64))
-        else
-            @argcheck disk16 == 0
-            @argcheck cd_disk16 == 0
-            @argcheck num_entries16 == num_entries_thisdisk16
-            @argcheck central_dir_offset32 ≤ eocd_offset
-            (Int64(central_dir_offset32), Int64(num_entries16))
-        end
-    end
+    central_dir_offset::Int64, central_dir_size::Int64, num_entries::Int64 = parse_EOCD64(io, fsize, eocd)
+    # If num_entries is crazy high, avoid allocating crazy amount of memory
+    # The minimum entry size is 46
+    min_central_dir_size, num_entries_overflow = Base.mul_with_overflow(num_entries, Int64(46))
+    @argcheck !num_entries_overflow
+    @argcheck min_central_dir_size ≤ central_dir_size
     seek(io, central_dir_offset)
-    central_dir_buffer::Vector{UInt8} = read(io)
+    central_dir_buffer::Vector{UInt8} = read(io, central_dir_size)
+    @argcheck length(central_dir_buffer) == central_dir_size
     entries = parse_central_directory_headers!(central_dir_buffer, num_entries)
 
     (;entries, central_dir_buffer, central_dir_offset)
 end
 
 function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num_entries::Int64)::Vector{EntryInfo}
-    io_b = IOBuffer(central_dir_buffer)
+    io_b = InputBuffer(central_dir_buffer)
     seekstart(io_b)
     # parse central directory headers
-    # If num_entries is crazy high, avoid allocating crazy amount of memory
-    @argcheck num_entries ≤ length(central_dir_buffer)>>5
     entries = Vector{EntryInfo}(undef, num_entries)
     for i in 1:num_entries
+        @argcheck bytesavailable(io_b) ≥ 46
         # central file header signature
         @argcheck readle(io_b, UInt32) == 0x02014b50
         version_made = readle(io_b, UInt8)
@@ -490,6 +627,8 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
         internal_attrs = readle(io_b, UInt16)
         external_attrs = readle(io_b, UInt32)
         offset32 = readle(io_b, UInt32)
+        # ensure there is enough room for the variable sized data
+        @argcheck bytesavailable(io_b) ≥ Int64(name_len) + Int64(extras_len) + Int64(comment_len)
         name_start = position(io_b) + 1
         skip(io_b, name_len)
         name_end = position(io_b)
@@ -575,124 +714,32 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
         )
     end
     # Maybe num_entries was too small: See https://github.com/thejoshwolfe/yauzl/issues/60
-    # In that case just log a warning
-    if bytesavailable(io_b) ≥ 4
-        if readle(io_b, UInt32) == 0x02014b50
-            @warn "There may be some entries that are being ignored"
-        end
-        skip(io_b, -4)
-    end
+    # In that case ignore any potential extra entries.
+    # Logging a warning here is not part of the zip spec, and causes JET
+    # to complain.
+    # Commented out warning:
+    # if bytesavailable(io_b) ≥ 4
+    #     if readle(io_b, UInt32) == 0x02014b50
+    #         @warn "There may be some entries that are being ignored"
+    #     end
+    #     skip(io_b, -4)
+    # end
 
     resize!(central_dir_buffer, position(io_b))
     entries
 end
 
-"""
-    zip_open_filereader(filename::AbstractString)::ZipFileReader
-    zip_open_filereader(f::Function, filename::AbstractString)
-
-Create a reader for a zip archive in a file at path `filename`.
-
-The file must not be modified while being read.
-
-`zip_nentries(r::ZipFileReader)::Int` returns the 
-number of entries in the archive. 
-
-`zip_names(r::ZipFileReader)::Vector{String}` returns the names of all the entries in the archive.
-
-The following get information about an entry in the archive:
-
-Entries are indexed from `1:zip_nentries(r)`
-
-1. `zip_name(r::ZipFileReader, i::Integer)::String`
-1. `zip_uncompressed_size(r::ZipFileReader, i::Integer)::UInt64`
-
-`zip_test_entry(r::ZipFileReader, i::Integer)::Nothing` 
-checks if an entry is valid and has a good checksum.
-
-Reading an entry doesn't error if the checksum is bad, so use `zip_test_entry` 
-if you are worried about data corruption.
-
-`zip_openentry` and `zip_readentry` can be used to read data from an entry.
-
-To fully close the file, close all opened entries and the parent `ZipFileReader` object.
-
-This will happen automatically if the do block method 
-is used for `zip_open_filereader` and `zip_openentry`.
-
-After closing the returned `ZipFileReader`, any opened entries 
-will remain opened and are still readable.
-
-# Multi threading
-
-The returned `ZipFileReader` object can safely be used from multiple threads; 
-however, the objects returned by `zip_openentry` 
-should only be accessed by one thread at a time.
-
-See also [`ZipBufferReader`](@ref).
-"""
-function zip_open_filereader(filename::AbstractString)::ZipFileReader
-    io_lock = ReentrantLock()
-    # I'm not sure if the lock is needed in the constructor.
-    io = open(filename; lock=false)
-    try # parse entries
-        entries, central_dir_buffer, central_dir_offset = lock(io_lock) do
-            parse_central_directory(io)
-        end
-        _ref_counter = Ref(Int64(1))
-        _open = Ref(true)
-        fsize = lock(io_lock) do
-            _ref_counter[] = 1
-            _open[] = true
-            filesize(io)
-        end
-        ZipFileReader(
-            entries,
-            central_dir_buffer,
-            central_dir_offset,
-            io,
-            _ref_counter,
-            _open,
-            io_lock,
-            fsize,
-            filename,
-        )
-    catch # close io if there is an error parsing entries
-        close(io)
-        rethrow()
-    end
-end
-function zip_open_filereader(f::Function, filename::AbstractString)
-    r = zip_open_filereader(filename)
-    try
-        f(r)
-    finally
-        close(r)
-    end
-end
-
-function Base.show(io::IO, r::ZipFileReader)
-    print(io, "ZipArchives.zip_open_filereader(")
-    print(io, repr(r._name))
-    print(io, ")")
-end
-
-
-Base.isopen(r::ZipFileReader)::Bool = r._open[]
 
 #=
 Throw an ArgumentError if entry cannot be extracted.
 =#
 function validate_entry(entry::EntryInfo, fsize::Int64)
-    if entry.method != Store && entry.method != Deflate
-        throw(ArgumentError("invalid compression method: $(entry.method). Only Store and Deflate supported for now"))
-    end
     # Check for unsupported bit flags
     @argcheck iszero(entry.bit_flags & 1<<0) "encrypted files not supported"
     @argcheck iszero(entry.bit_flags & 1<<5) "patched data not supported"
     @argcheck iszero(entry.bit_flags & 1<<6) "encrypted files not supported"
     @argcheck iszero(entry.bit_flags & 1<<13) "encrypted files not supported"
-    @argcheck entry.version_needed ≤ 45
+    @argcheck entry.version_needed ≤ 63
     # This allows for files to overlap, which sometimes can happen.
     min_loc_h_size::Int64 = min_local_header_size(entry)
     @argcheck min_loc_h_size > 29 
@@ -705,201 +752,62 @@ function validate_entry(entry::EntryInfo, fsize::Int64)
     nothing
 end
 
-function zip_openentry(r::ZipFileReader, i::Int)::TranscodingStream
-    entry::EntryInfo = r.entries[i]
-    validate_entry(entry, r._fsize)
-    lock(r._lock) do
-        if r._open[]
-            @assert r._ref_counter[] > 0 
-            r._ref_counter[] += 1
-        else
-            throw(ArgumentError("ZipFileReader is closed"))
-        end
-    end
-    local_header_offset::Int64 = entry.offset
-    entry_data_offset::Int64 = -1
-    method = entry.method
-    Base.@lock r._lock begin
-        # read and validate local header
-        seek(r._io, local_header_offset)
-        @argcheck readle(r._io, UInt32) == 0x04034b50
-        skip(r._io, 4)
-        @argcheck readle(r._io, UInt16) == method
-        skip(r._io, 4*4)
-        local_name_len = readle(r._io, UInt16)
-        @argcheck local_name_len == length(entry.name_range)
-        extra_len = readle(r._io, UInt16)
-
-        actual_local_header_size::Int64 = 30 + extra_len + local_name_len
-        entry_data_offset = local_header_offset + actual_local_header_size
-        # make sure this doesn't overflow
-        @argcheck entry_data_offset > local_header_offset
-        @argcheck entry.compressed_size ≤ r._fsize
-        @argcheck entry_data_offset ≤ r._fsize - entry.compressed_size
-
-        @argcheck read(r._io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
-        skip(r._io, extra_len)
-    end
-    @argcheck entry_data_offset ≥ 0
-    base_io = ZipFileEntryReader(
-        r,
-        0,
-        -1,
-        entry_data_offset,
-        entry.crc32,
-        entry.compressed_size,
-        Ref(true),
-    )
-    @assert base_io.compressed_size ≥ 0
-    @assert base_io.offset ≥ 0
-    @assert base_io.compressed_size + base_io.offset ≥ 0
-    try
-        if method == Store
-            return NoopStream(base_io)
-        elseif method == Deflate
-            return DeflateDecompressorStream(base_io)
-        else
-            error("unknown compression method $method. Only Deflate and Store are supported.")
-        end
-    catch
-        close(base_io)
-        rethrow()
-    end
-end
-
-# Readable IO interface for ZipFileEntryReader
-Base.isopen(io::ZipFileEntryReader)::Bool = io._open[]
-
-Base.bytesavailable(io::ZipFileEntryReader)::Int64 = io.compressed_size - io.p
-
-Base.iswritable(io::ZipFileEntryReader)::Bool = false
-
-Base.eof(io::ZipFileEntryReader)::Bool = iszero(bytesavailable(io))
-
-function Base.unsafe_read(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)::Nothing
-    @argcheck isopen(io)
-    n_real::UInt = min(n, bytesavailable(io))
-    r = io.r
-    read_start = io.offset+io.p
-    @assert read_start > 0
-    lock(r._lock) do
-        seek(r._io, read_start)
-        unsafe_read(r._io, p, n_real)
-    end
-    io.p += n_real
-    @assert io.p ≤ io.compressed_size
-    if n_real != n
-        @assert eof(io)
-        throw(EOFError())
-    end
-    nothing
-end
-
-# These functions were added to make JET happy
-# They should never actually get called.
-function Base.read(io::ZipFileEntryReader, ::Type{UInt8})
-    error("ZipFileEntryReader does not support byte I/O")
-end
-function Base.unsafe_write(io::ZipFileEntryReader, p::Ptr{UInt8}, n::UInt)
-    throw(ArgumentError("ZipFileEntryReader not writable"))
-end
-
-Base.position(io::ZipFileEntryReader)::Int64 = io.p
-
-function Base.seek(io::ZipFileEntryReader, n::Integer)::ZipFileEntryReader
-    @argcheck Int64(n) ∈ Int64(0):io.compressed_size
-    io.p = Int64(n)
-    @assert io.p ≤ io.compressed_size
-    return io
-end
-
-function Base.seekend(io::ZipFileEntryReader)::ZipFileEntryReader
-    io.p = io.compressed_size
-    @assert io.p ≤ io.compressed_size
-    return io
-end
-
-# Close will only actually close the internal io
-# when all ZipFileEntryReader and ZipFileReader referencing the io
-# call close.
-function Base.close(io::ZipFileEntryReader)::Nothing
-    if isopen(io)
-        io._open[] = false
-        io.p = io.compressed_size
-        r = io.r
-        lock(r._lock) do
-            @assert r._ref_counter[] > 0 
-            r._ref_counter[] -= 1
-            if r._ref_counter[] == 0
-                @assert !r._open[]
-                close(r._io)
-            end
-        end
-    end
-    nothing
-end
-
-function Base.close(r::ZipFileReader)::Nothing
-    if isopen(r)
-        lock(r._lock) do
-            if r._open[]
-                r._open[] = false
-                @assert r._ref_counter[] > 0 
-                r._ref_counter[] -= 1
-                if r._ref_counter[] == 0
-                    close(r._io)
-                end
-            end
-        end
-    end
-    nothing
-end
-
 
 """
-    struct ZipBufferReader{T<:AbstractVector{UInt8}}
-    ZipBufferReader(buffer::AbstractVector{UInt8})
+    struct ZipReader{T<:AbstractVector{UInt8}}
+    ZipReader(buffer::AbstractVector{UInt8})
 
-Create a reader for a zip archive in `buffer`.
+View the bytes in `buffer` as a ZIP archive.
 
 The array must not be modified while being read.
 
-`zip_nentries(r::ZipBufferReader)::Int` returns the 
-number of entries in the archive. 
+`zip_nentries(r::ZipReader)::Int` returns the
+number of entries in the archive.
 
-`zip_names(r::ZipBufferReader)::Vector{String}` returns the names of all the entries in the archive.
+`zip_names(r::ZipReader)::Vector{String}` returns the names of all the entries in the archive.
 
-The following get information about an entry in the archive:
+The following functions get information about an entry in the archive:
 
 Entries are indexed from `1:zip_nentries(r)`
 
-1. `zip_name(r::ZipBufferReader, i::Integer)::String`
-1. `zip_uncompressed_size(r::ZipBufferReader, i::Integer)::UInt64`
+1. `zip_name(r, i)::String`
+1. `zip_readentry(r, i)::Vector{UInt8}`
+1. `zip_isdir(r, i)::Bool`
+1. `zip_uncompressed_size(r, i)::UInt64`
+1. `zip_compressed_size(r, i)::UInt64`
+1. `zip_compression_method(r, i)::UInt16`
+1. `zip_entry_data_offset(r, i)::Int64`
+1. `zip_stored_crc32(r, i)::UInt32`
+1. `zip_comment(r, i)::String`
+1. `zip_isexecutablefile(r, i)::Bool`
+1. `zip_definitely_utf8(r, i)::Bool`
+1. `zip_iscompressed(r, i)::Bool`
+1. `zip_general_purpose_bit_flag(r, i)::UInt16`
 
-`zip_test_entry(r::ZipBufferReader, i::Integer)::Nothing` checks if an entry is valid and has a good checksum.
+`zip_test_entry(r::ZipReader, i::Integer)::Nothing` will throw an error if an entry is invalid or has a bad checksum.
 
 `zip_openentry` and `zip_readentry` can be used to read data from an entry.
 
-A `ZipBufferReader` object does not need to be closed, and cannot be closed.
+The `parent` function can be used to get the underlying buffer.
 
 # Multi threading
 
-The returned `ZipBufferReader` object can safely be used from multiple threads; 
-however, the streams returned by `zip_openentry` 
+The returned `ZipReader` object can safely be used from multiple threads;
+however, the streams returned by `zip_openentry`
 should only be accessed by one thread at a time.
 """
-function ZipBufferReader(buffer::AbstractVector{UInt8})
-    io = IOBuffer(buffer)
+function ZipReader(buffer::AbstractVector{UInt8})
+    io = InputBuffer(buffer)
     entries, central_dir_buffer, central_dir_offset = parse_central_directory(io)
-    ZipBufferReader{typeof(buffer)}(entries, central_dir_buffer, central_dir_offset, buffer)
+    ZipReader{typeof(buffer)}(entries, central_dir_buffer, central_dir_offset, buffer)
 end
 
-function Base.show(io::IO, r::ZipBufferReader)
-    print(io, "ZipArchives.ZipBufferReader(")
+function Base.show(io::IO, r::ZipReader)
+    print(io, "ZipArchives.ZipReader(")
     show(io, r.buffer)
     print(io, ")")
 end
-function Base.show(io::IO, ::MIME"text/plain", r::ZipBufferReader)
+function Base.show(io::IO, ::MIME"text/plain", r::ZipReader)
     topnames = Set{String}()
     total_size::Int128 = 0
     N = zip_nentries(r)
@@ -926,34 +834,58 @@ function Base.show(io::IO, ::MIME"text/plain", r::ZipBufferReader)
     end
 end
 
+Base.parent(r::ZipReader) = r.buffer
 
-function zip_openentry(r::ZipBufferReader, i::Int)
+"""
+    zip_entry_data_offset(r::ZipReader, i::Integer)::Int64
+
+Return the offset of the start of the compressed data for entry `i` from
+the start of the buffer in `r`.
+
+Throw an error if the local header is invalid.
+
+See also [`zip_compression_method`](@ref) and [`zip_compressed_size`](@ref).
+"""
+zip_entry_data_offset(r::ZipReader, i::Integer) = zip_entry_data_offset(r, Int(i))
+function zip_entry_data_offset(r::ZipReader, i::Int)::Int64
     fsize::Int64 = length(r.buffer)
     entry::EntryInfo = r.entries[i]
     compressed_size::Int64 = entry.compressed_size
-    validate_entry(entry, fsize)
-    io = IOBuffer(r.buffer)
     local_header_offset::Int64 = entry.offset
+    name_len::Int64 = length(entry.name_range)
     method = entry.method
+    validate_entry(entry, fsize)
+    io = InputBuffer(r.buffer)
+    chunk = getchunk(io, local_header_offset, 30 + name_len)
     # read and validate local header
-    seek(io, local_header_offset)
-    @argcheck readle(io, UInt32) == 0x04034b50
-    skip(io, 4)
-    @argcheck readle(io, UInt16) == method
-    skip(io, 4*4)
-    local_name_len = readle(io, UInt16)
-    @argcheck local_name_len == length(entry.name_range)
-    extra_len = readle(io, UInt16)
+    header_io = InputBuffer(chunk)
+    @argcheck readle(header_io, UInt32) == 0x04034b50
+    skip(header_io, 4)
+    @argcheck readle(header_io, UInt16) == method
+    skip(header_io, 4*4)
+    local_name_len = readle(header_io, UInt16)
+    @argcheck local_name_len == name_len
+    extra_len = readle(header_io, UInt16)
 
-    actual_local_header_size::Int64 = 30 + extra_len + local_name_len
+    actual_local_header_size::Int64 = 30 + extra_len + name_len
     entry_data_offset::Int64 = local_header_offset + actual_local_header_size
     # make sure this doesn't overflow
     @argcheck entry_data_offset > local_header_offset
     @argcheck compressed_size ≤ fsize
     @argcheck entry_data_offset ≤ fsize - compressed_size
 
-    @argcheck read(io, local_name_len) == view(r.central_dir_buffer, entry.name_range)
-    skip(io, extra_len)
+    @argcheck @view(chunk[begin+30 : end]) == view(r.central_dir_buffer, entry.name_range)
+
+    entry_data_offset
+end
+
+function zip_openentry(r::ZipReader, i::Int)
+    compressed_size::Int64 = zip_compressed_size(r, i)
+    method = zip_compression_method(r, i)
+    if method != Store && method != Deflate && method != Deflate64
+        throw(ArgumentError("invalid compression method: $(method). Only Store(0), Deflate(8), and Deflate64(9) supported for now"))
+    end
+    entry_data_offset = zip_entry_data_offset(r, i)
 
     begin_ind::Int64 = firstindex(r.buffer)
     startidx = begin_ind + entry_data_offset
@@ -963,13 +895,15 @@ function zip_openentry(r::ZipBufferReader, i::Int)
     @argcheck lastidx ≤ lastindex(r.buffer)
     @argcheck length(startidx:lastidx) == compressed_size
     
-    base_io = IOBuffer(view(r.buffer, startidx:lastidx))
+    base_io = InputBuffer(view(r.buffer, startidx:lastidx))
     if method == Store
         return base_io
     elseif method == Deflate
         return DeflateDecompressorStream(base_io)
+    elseif method == Deflate64
+        return Deflate64DecompressorStream(base_io)
     else
-        # validate_entry should throw and ArgumentError before this
+        # should throw and ArgumentError before this
         error("unreachable") 
     end
 end

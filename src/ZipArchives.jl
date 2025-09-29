@@ -9,10 +9,10 @@ For example if you download this repo as a ".zip" from github https://github.com
 you can read the README in julia.
 
 ```julia
-using ZipArchives: ZipBufferReader, zip_names, zip_readentry
+using ZipArchives: ZipReader, zip_names, zip_readentry
 using Downloads: download
 data = take!(download("https://github.com/JuliaIO/ZipArchives.jl/archive/refs/heads/main.zip", IOBuffer()));
-archive = ZipBufferReader(data)
+archive = ZipReader(data)
 ```
 
 ```julia
@@ -47,9 +47,11 @@ end
 module ZipArchives
 
 using CodecZlib: DeflateCompressorStream, DeflateDecompressorStream, DeflateCompressor
+using CodecInflate64: Deflate64DecompressorStream
 using TranscodingStreams: TranscodingStreams, TranscodingStream, Noop, NoopStream
 using ArgCheck: @argcheck
 using Zlib_jll: Zlib_jll
+using InputBuffers: InputBuffer
 using PrecompileTools: @setup_workload, @compile_workload
 
 include("constants.jl")
@@ -58,9 +60,8 @@ include("filename-checks.jl")
 include("types.jl")
 
 include("reader.jl")
-export ZipFileReader
-export zip_open_filereader
-export ZipBufferReader
+export ZipReader
+export ZipBufferReader # alias for ZipReader for compat reasons
 
 export zip_crc32
 
@@ -76,8 +77,12 @@ export zip_isdir
 export zip_isexecutablefile
 export zip_findlast_entry
 export zip_comment
+export zip_compression_method
+export zip_general_purpose_bit_flag
+export zip_entry_data_offset
 
 export zip_test_entry
+export zip_test
 export zip_openentry
 export zip_readentry
 
@@ -113,7 +118,7 @@ export zip_mkdir
             end
         end
         zipdata = take!(io)
-        r = ZipBufferReader(zipdata)
+        r = ZipReader(zipdata)
         zip_readentry(r, 1)
     end
 end

@@ -22,14 +22,15 @@ end
     testdata = joinpath(@__DIR__,"examples from go/testdata/")
     same_content_files = [
         "test.zip",
-        "test-baddirsz.zip",
-        "test-badbase.zip",
     ]
     invalid_files = [
         "test-trailing-junk.zip",
         "test-prefix.zip",
         "readme.zip",
-        "readme.notzip"
+        "readme.notzip",
+        "test-baddirsz.zip",
+        "test-badbase.zip",
+        "comment-truncated.zip",
     ]
 
     for filename in same_content_files
