@@ -3,6 +3,7 @@
 # These functions take a zipfile path and a directory path and extract the zipfile into the directory
 import p7zip_jll
 import LibArchive_jll
+import unzip_jll
 # ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
 try
     import PythonCall
@@ -30,6 +31,25 @@ Use bsdtar from libarchive
 """
 function unzip_bsdtar(zippath, dirpath)
     run(`$(LibArchive_jll.bsdtar()) -x -f $(zippath) -C $(dirpath)`)
+    nothing
+end
+
+function have_unzip_jll()
+    # unzip_jll is especially broken on windows.
+    # https://github.com/JuliaPackaging/Yggdrasil/issues/7679
+    !Sys.iswindows()
+end
+
+"""
+Extract the zip file at zippath into the directory dirpath
+Use unzip from unzip_jll
+"""
+function unzip_unzip_jll(zippath, dirpath)
+    try
+        run(`$(unzip_jll.unzip()) -qq $(zippath) -d $(dirpath)`)
+    catch
+        # unzip errors if the zip file is empty for some reason
+    end
     nothing
 end
 
@@ -80,6 +100,12 @@ unzippers = Any[
     unzip_p7zip,
     unzip_bsdtar,
 ]
+
+if have_unzip_jll()
+    push!(unzippers, unzip_unzip_jll)
+else
+    @info "unzip_jll is broken on this platform, skipping `unzip_unzip_jll` tests"
+end
 
 if have_python()
     push!(unzippers, unzip_python)
