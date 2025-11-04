@@ -21,7 +21,7 @@ function unzip_p7zip(zippath, dirpath)
     # "LANG"=>"C.UTF-8" env variable is sometimes needed to get p7zip to use utf8
     # pipe output to devnull because p7zip is noisy
     # run(addenv(`$(p7zip_jll.p7zip()) x -y -o$(dirpath) $(zippath)`, "LANG"=>"C.UTF-8"))
-    run(pipeline(addenv(`$(p7zip_jll.p7zip()) x -y -o$(dirpath) $(zippath)`, "LANG"=>"C.UTF-8"), devnull))
+    run(pipeline(addenv(`$(p7zip_jll.p7zip()) x -tzip -y -o$(dirpath) -- $(zippath)`, "LANG"=>"C.UTF-8"), devnull))
     nothing
 end
 
