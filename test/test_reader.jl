@@ -245,9 +245,7 @@ end
         mktempdir() do tmpout
             data = read(file)
             r = ZipReader(data)
-            p7zip_jll.p7zip() do exe
-                run(pipeline(`$(exe) x -y -o$(tmpout) $(file)`, devnull))
-            end
+            run(pipeline(`$(p7zip_jll.p7zip()) x -tzip -y -o$(tmpout) -- $(file)`, devnull))
             for i in 1:zip_nentries(r)
                 zip_test_entry(r, i)
                 name = zip_name(r, i)
