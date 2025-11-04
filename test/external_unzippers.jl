@@ -34,6 +34,12 @@ function unzip_bsdtar(zippath, dirpath)
     nothing
 end
 
+function have_unzip_jll()
+    # unzip_jll is especially broken on windows.
+    # https://github.com/JuliaPackaging/Yggdrasil/issues/7679
+    !Sys.iswindows()
+end
+
 """
 Extract the zip file at zippath into the directory dirpath
 Use unzip from unzip_jll
@@ -93,8 +99,13 @@ end
 unzippers = Any[
     unzip_p7zip,
     unzip_bsdtar,
-    unzip_unzip_jll,
 ]
+
+if have_unzip_jll()
+    push!(unzippers, unzip_unzip_jll)
+else
+    @info "unzip_jll is broken on this platform, skipping `unzip_unzip_jll` tests"
+end
 
 if have_python()
     push!(unzippers, unzip_python)
