@@ -162,6 +162,19 @@ for a description of the bits.
 zip_general_purpose_bit_flag(x::HasEntries, i::Integer)::UInt16 = x.entries[i].bit_flags
 
 """
+    zip_version_made_by(x::HasEntries, i::Integer)::UInt16
+
+Return the "version made by" field for entry `i`.
+
+See https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT 
+for a description of this field.
+"""
+function zip_version_made_by(x::HasEntries, i::Integer)::UInt16
+    e = x.entries[i]
+    UInt16(e.version_made) | UInt16(e.os)<<8
+end
+
+"""
     zip_iscompressed(x::HasEntries, i::Integer)::Bool
 
 Return if entry `i` is marked as compressed.
