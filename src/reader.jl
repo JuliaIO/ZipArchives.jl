@@ -5,27 +5,6 @@ function unsafe_crc32(p::Ptr{UInt8}, nb::UInt, crc::UInt32)::UInt32
     )
 end
 
-# currently unsafe_convert fails on some AbstractUnitRange{<:Integer}, so plain `AbstractUnitRange` can't be used
-const FastByteView{P <: AbstractVector{UInt8}} = SubArray{UInt8, 1, P, <:Tuple{AbstractUnitRange{Int}}, true}
-
-if VERSION ≥ v"1.11"
-    const ByteArray = Union{
-        Base.CodeUnits{UInt8, String},
-        Vector{UInt8},
-        FastByteView{Base.CodeUnits{UInt8,String}}, 
-        FastByteView{Vector{UInt8}},
-        Memory{UInt8},
-        FastByteView{Memory{UInt8}}
-    }
-else
-    const ByteArray = Union{
-        Base.CodeUnits{UInt8, String},
-        Vector{UInt8},
-        FastByteView{Base.CodeUnits{UInt8,String}},
-        FastByteView{Vector{UInt8}}
-    }
-end
-
 # version of String(v::AbstractVector{UInt8}) that works consistently.
 function bytes2string(v::AbstractVector{UInt8})::String
     String(view(v,:))
@@ -38,23 +17,85 @@ Return the standard zip CRC32 checksum of data
 
 See also [`zip_stored_crc32`](@ref), [`zip_test_entry`](@ref).
 """
-function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
-    cconv_data = Base.cconvert(Ptr{UInt8}, data)
-    GC.@preserve cconv_data unsafe_crc32(Base.unsafe_convert(Ptr{UInt8}, cconv_data), UInt(length(data)), crc)
-end
+function zip_crc32 end
 
-function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
-    start::Int64 = firstindex(data)
-    n::Int64 = length(data)
-    offset::Int64 = 0
-    buf = Vector{UInt8}(undef, min(n, Int64(24576)))
-    while offset < n
-        nb = min(n-offset, Int64(24576))
-        copyto!(buf, Int64(1), data, offset + start, nb)
-        crc = zip_crc32(view(buf, 1:Int(nb)), crc)
-        offset += nb
+@static if isdefined(Base, :try_strides)
+    function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
+        if is_ptr_loadable(data) && try_strides(data) === (1,) && isone(Base.elsize(data))
+            cconv_data = Base.cconvert(Ptr{UInt8}, data)
+            GC.@preserve cconv_data unsafe_crc32(Base.unsafe_convert(Ptr{UInt8}, cconv_data), UInt(length(data)), crc)
+        else
+            start::Int64 = firstindex(data)
+            n::Int64 = length(data)
+            offset::Int64 = 0
+            buf = Vector{UInt8}(undef, min(n, Int64(24576)))
+            while offset < n
+                nb = min(n-offset, Int64(24576))
+                copyto!(buf, Int64(1), data, offset + start, nb)
+                crc = zip_crc32(view(buf, 1:Int(nb)), crc)
+                offset += nb
+            end
+            crc
+        end
     end
-    crc
+
+    function getchunk(io::InputBuffer, offset, size)
+        data = parent(io)
+        start = firstindex(data)+offset
+        if is_ptr_loadable(data) && try_strides(data) === (1,) && isone(Base.elsize(data))
+            view(data, start:start+size-1)
+        else
+            out = Vector{UInt8}(undef, size)
+            copyto!(out, Int64(1), data, Int64(start), Int64(size))
+            out
+        end
+    end
+else
+    # currently unsafe_convert fails on some AbstractUnitRange{<:Integer}, so plain `AbstractUnitRange` can't be used
+    const FastByteView{P <: AbstractVector{UInt8}} = SubArray{UInt8, 1, P, <:Tuple{AbstractUnitRange{Int}}, true}
+
+    if VERSION ≥ v"1.11"
+        const ByteArray = Union{
+            Base.CodeUnits{UInt8, String},
+            Vector{UInt8},
+            FastByteView{Base.CodeUnits{UInt8,String}}, 
+            FastByteView{Vector{UInt8}},
+            Memory{UInt8},
+            FastByteView{Memory{UInt8}}
+        }
+    else
+        const ByteArray = Union{
+            Base.CodeUnits{UInt8, String},
+            Vector{UInt8},
+            FastByteView{Base.CodeUnits{UInt8,String}},
+            FastByteView{Vector{UInt8}}
+        }
+    end
+
+    function zip_crc32(data::ByteArray, crc::UInt32=UInt32(0))::UInt32
+        cconv_data = Base.cconvert(Ptr{UInt8}, data)
+        GC.@preserve cconv_data unsafe_crc32(Base.unsafe_convert(Ptr{UInt8}, cconv_data), UInt(length(data)), crc)
+    end
+
+    function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
+        start::Int64 = firstindex(data)
+        n::Int64 = length(data)
+        offset::Int64 = 0
+        buf = Vector{UInt8}(undef, min(n, Int64(24576)))
+        while offset < n
+            nb = min(n-offset, Int64(24576))
+            copyto!(buf, Int64(1), data, offset + start, nb)
+            crc = zip_crc32(view(buf, 1:Int(nb)), crc)
+            offset += nb
+        end
+        crc
+    end
+
+    function getchunk(io::InputBuffer{<:ByteArray}, offset, size)
+        data = parent(io)
+        start = firstindex(data)+offset
+        view(data, start:start+size-1)
+    end
 end
 
 @inline readle(io::IO, ::Type{UInt64}) = UInt64(readle(io, UInt32)) | UInt64(readle(io, UInt32))<<32
@@ -74,11 +115,6 @@ function getchunk(io::IO, offset, size)
         error("short read")
     end
     out
-end
-function getchunk(io::InputBuffer{<:ByteArray}, offset, size)
-    data = parent(io)
-    start = firstindex(data)+offset
-    view(data, start:start+size-1)
 end
 
 #=
