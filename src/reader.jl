@@ -19,9 +19,9 @@ See also [`zip_stored_crc32`](@ref), [`zip_test_entry`](@ref).
 """
 function zip_crc32 end
 
-@static if isdefined(Base, :try_strides)
+@static if isdefined(Base, :is_strided)
     function zip_crc32(data::AbstractVector{UInt8}, crc::UInt32=UInt32(0))::UInt32
-        if is_ptr_loadable(data) && try_strides(data) === (1,) && isone(Base.elsize(data))
+        if Base.is_ptr_loadable(data) && Base.is_strided(data) && strides(data) === (1,) && isone(Base.elsize(data))
             cconv_data = Base.cconvert(Ptr{UInt8}, data)
             GC.@preserve cconv_data unsafe_crc32(Base.unsafe_convert(Ptr{UInt8}, cconv_data), UInt(length(data)), crc)
         else
@@ -42,7 +42,7 @@ function zip_crc32 end
     function getchunk(io::InputBuffer, offset, size)
         data = parent(io)
         start = firstindex(data)+offset
-        if is_ptr_loadable(data) && try_strides(data) === (1,) && isone(Base.elsize(data))
+        if Base.is_ptr_loadable(data) && Base.is_strided(data) && strides(data) === (1,) && isone(Base.elsize(data))
             view(data, start:start+size-1)
         else
             out = Vector{UInt8}(undef, size)
