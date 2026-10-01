@@ -46,8 +46,8 @@ Trying to write to an `io` with existing data will result in an invalid archive.
 If you want to add entries to existing zip archive, use [`zip_append_archive`](@ref)
 
 # Optional Keywords
-- `check_names::Bool=true`: Best attempt to error if new entry names aren't valid on windows 
-    or already exist in the archive in a case insensitive way.
+- `check_names::Bool=true`: Best attempt to error if new entry names aren't valid on windows
+    or already exist in the archive.
 """
 function ZipWriter(f::Function, io::IO; zip_kwargs...)
     w = ZipWriter(io; zip_kwargs...)
