@@ -666,7 +666,7 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
                 local data_size_left::Int = data_size
                 extras_bytes_left -= 4
                 @argcheck data_size ≤ extras_bytes_left
-                if id == 0x0001 && version_needed ≥ 45
+                if id == 0x0001
                     if u_size32 == -1%UInt32 && data_size_left ≥ 8
                         uncompressed_size = readle(io_b, UInt64)
                         u_size_zip64 = true
