@@ -218,12 +218,23 @@ end
 end
 
 @testset "reading zip64 offset with version_needed < 45" begin
-    # Some writers (e.g. ESA's Sentinel-1 SAFE packer) mark every entry "version needed to
-    # extract" 2.0 even when its local header offset needs a zip64 extra field, instead of
-    # bumping it to 4.5 as APPNOTE.TXT recommends. The zip64 extra field's presence is already
-    # signaled unambiguously by the 0xffffffff/0xffff placeholders in the fixed-size fields, so
-    # a reader must not require version_needed >= 45 to look for it -- Python's zipfile doesn't.
-    zip_data = b"PK\x03\x04-\x00\x00\x08\x00\x00\x00\x00\x00\x00\x13\xec\x8d_\xff\xff\xff\xff\xff\xff\xff\xff\x04\x00\x14\x00test\x01\x00\x10\x00\x09\x00\x00\x00\x00\x00\x00\x00\x09\x00\x00\x00\x00\x00\x00\x00file dataPK\x01\x02?\x03\x14\x00\x00\x08\x00\x00\x00\x00\x00\x00\x13\xec\x8d_\x09\x00\x00\x00\x09\x00\x00\x00\x04\x00\x0c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x81\xa4\xff\xff\xff\xfftest\x01\x00\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00PK\x06\x06,\x00\x00\x00\x00\x00\x00\x00?\x03-\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00>\x00\x00\x00\x00\x00\x00\x00?\x00\x00\x00\x00\x00\x00\x00PK\x06\x07\x00\x00\x00\x00}\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00PK\x05\x06\x00\x00\x00\x00\x01\x00\x01\x00>\x00\x00\x00\xff\xff\xff\xff\x00\x00"
+    # Some writers set "version needed to extract" to 2.0 (or 1.0) even for entries that
+    # use a zip64 extra field, instead of 4.5 as APPNOTE.TXT section 4.4.3.2 specifies.
+    # For example, the entries past 4 GiB in this Sentinel-1 archive:
+    # https://datapool.asf.alaska.edu/SLC/SA/S1A_IW_SLC__1SDV_20180804T230017_20180804T230054_023103_028248_D80B.zip
+    # The zip64 extra field is unambiguously identified by its 0x0001 header ID,
+    # so a reader should not require version_needed >= 45 to look for it.
+    zip_data = UInt8[
+        b"PK\x03\x04\x14\0\0\b\0\0\0\0\0\0\x13\xec\x8d_\t\0\0\0\t\0\0\0\x04\0\0\0testfile data"; # Local file header and data
+        # Central directory file header
+        b"PK\x01\x02?\x03";
+        b"\x14\0"; # version needed to extract: 2.0
+        b"\0\b\0\0\0\0\0\0\x13\xec\x8d_\t\0\0\0\t\0\0\0\x04\0\f\0\0\0\0\0\0\0\0\0\xa4\x81";
+        b"\xff\xff\xff\xff"; # relative offset of local header: use zip64 extra field
+        b"test";
+        b"\x01\0\b\0\0\0\0\0\0\0\0\0"; # zip64 extra field: relative offset of local header = 0
+        b"PK\x05\x06\0\0\0\0\x01\0\x01\0>\0\0\0+\0\0\0\0\0"; # End of central directory record
+    ]
     r = ZipReader(zip_data)
     @test zip_names(r) == ["test"]
     zip_test_entry(r, 1)
