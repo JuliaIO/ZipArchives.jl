@@ -3,6 +3,8 @@
 
 #VS Code
 /.vscode/
+/agent-depot/
+/agent-logs/
 
 /test/Manifest.toml
 /benchmark/Manifest.toml
