@@ -211,7 +211,7 @@ may not be a valid date and time, for example month 0, February 30, or hour 31.
 Even if valid, this might not be the true last modification time of the entry:
 - Some zip writers store a fixed placeholder, for example `ZipWriter`
     defaults to `DOSDateTime()`, 1980-01-01 00:00:00.
-- No time zone is stored.
+- No time zone is stored. Writers typically use their local time.
 - The resolution is 2 seconds.
 - More precise timestamps that some writers store in extra fields are ignored.
 
