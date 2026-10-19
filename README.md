@@ -138,9 +138,8 @@ Currently, ZipArchives has the following benefits over ZipFile:
 8. [No garbage collection bugs](https://github.com/fhs/ZipFile.jl/issues/14).
 
 ZipArchives currently has the following limitations compared to ZipFile:
-1. No way to specify the modification time, times are set to 1980-01-01 00:00:00 DOS date time.
-2. No `flush` function for `ZipWriter`. `close` and `zip_append_archive` can be used instead.
-3. No way to read an archive from an `IOStream`, instead `Mmap.jl` or a custom struct can be used to treat the file as a `AbstractVector{UInt8}`. Example in [test/test_file-array.jl](https://github.com/JuliaIO/ZipArchives.jl/blob/main/test/test_file-array.jl).
+1. No `flush` function for `ZipWriter`. `close` and `zip_append_archive` can be used instead.
+2. No way to read an archive from an `IOStream`, instead `Mmap.jl` or a custom struct can be used to treat the file as a `AbstractVector{UInt8}`. Example in [test/test_file-array.jl](https://github.com/JuliaIO/ZipArchives.jl/blob/main/test/test_file-array.jl).
 
 ### [ZipStreams](https://github.com/reallyasi9/ZipStreams.jl)
 

@@ -165,6 +165,8 @@ If not see [`zip_writefile`](@ref)
     Defaults to false.
 - `external_attrs::Union{Nothing,UInt32}=nothing`: Manually override the 
     external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
+- `dos_datetime::DOSDateTime=DOSDateTime()`: Last modification date and time.
+    See [`DOSDateTime`](@ref).
 """
 function zip_newfile(w::ZipWriter, name::AbstractString;
         comment::String="",
@@ -173,6 +175,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
         compression_level::Int=-1,
         executable::Union{Nothing,Bool}=nothing,
         external_attrs::Union{Nothing,UInt32}=nothing,
+        dos_datetime::DOSDateTime=DOSDateTime(),
     )
     @argcheck isopen(w)
     zip_commitfile(w)
@@ -190,6 +193,7 @@ function zip_newfile(w::ZipWriter, name::AbstractString;
     pe = PartialEntry(;
         name=namestr,
         comment,
+        dos_datetime,
         w.force_zip64,
         offset=io.offset,
     )
@@ -402,11 +406,14 @@ See also, [`zip_newfile`](@ref)
     Defaults to false.
 - `external_attr::Union{Nothing,UInt32}=nothing`: Manually set the 
     external file attributes: See https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
+- `dos_datetime::DOSDateTime=DOSDateTime()`: Last modification date and time.
+    See [`DOSDateTime`](@ref).
 """
 function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{UInt8};
         comment::String="",
         executable::Union{Nothing,Bool}=nothing,
         external_attrs::Union{Nothing,UInt32}=nothing,
+        dos_datetime::DOSDateTime=DOSDateTime(),
     )
     @argcheck isopen(w)
     zip_commitfile(w)
@@ -425,6 +432,7 @@ function zip_writefile(w::ZipWriter, name::AbstractString, data::AbstractVector{
     pe = PartialEntry(;
         name=namestr,
         comment,
+        dos_datetime,
         offset=w._io.offset,
         w.force_zip64,
         compressed_size=length(data),
@@ -467,21 +475,24 @@ function zip_name_collision(w::ZipWriter, new_name::String)::Bool
 end
 
 """
-    zip_mkdir(w::ZipWriter, name::AbstractString)
+    zip_mkdir(w::ZipWriter, name::AbstractString; dos_datetime::DOSDateTime=DOSDateTime())
 
 Write a directory entry named `name`.
 
 `name` should end in "/". If not, a "/" will be appended.
 
 This is only needed to add an empty directory.
+
+`dos_datetime` is the last modification date and time. See [`DOSDateTime`](@ref).
 """
-function zip_mkdir(w::ZipWriter, name::AbstractString)
+function zip_mkdir(w::ZipWriter, name::AbstractString; dos_datetime::DOSDateTime=DOSDateTime())
     namestr::String = String(name)
     if !endswith(namestr, "/")
         namestr = namestr*"/"
     end
     zip_writefile(w, namestr, UInt8[];
         external_attrs=UInt32(0o0040755)<<16,
+        dos_datetime,
     )
 end
 
@@ -552,8 +563,7 @@ function write_local_header(io::WriteOffsetTracker, entry::PartialEntry)
     p += write_buffer(b, p, version_needed)
     p += write_buffer(b, p, entry.bit_flags)
     p += write_buffer(b, p, entry.method)
-    p += write_buffer(b, p, entry.dos_time)
-    p += write_buffer(b, p, entry.dos_date)
+    p += write_buffer(b, p, entry.dos_datetime.raw)
     p += write_buffer(b, p, entry.crc32)
     if use_zip64
         p += write_buffer(b, p, -1%UInt32) # compressed size placeholder
@@ -620,8 +630,7 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
     p += write_buffer(b, p, version_needed)
     p += write_buffer(b, p, pe.bit_flags)
     p += write_buffer(b, p, pe.method)
-    p += write_buffer(b, p, pe.dos_time)
-    p += write_buffer(b, p, pe.dos_date)
+    p += write_buffer(b, p, pe.dos_datetime.raw)
     p += write_buffer(b, p, pe.crc32)
     if use_zip64
         p += write_buffer(b, p, -1%UInt32)
@@ -662,8 +671,7 @@ function append_entry!(b::Vector{UInt8}, pe::PartialEntry)::EntryInfo
         version_needed,
         pe.bit_flags,
         pe.method,
-        pe.dos_time,
-        pe.dos_date,
+        pe.dos_datetime,
         pe.crc32,
         pe.compressed_size,
         pe.uncompressed_size,

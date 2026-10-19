@@ -1,3 +1,79 @@
+"""
+    struct DOSDateTime
+    DOSDateTime()::DOSDateTime
+    DOSDateTime(year, month, day, hour=0, minute=0, second=0)::DOSDateTime
+    DOSDateTime(raw::UInt32)::DOSDateTime
+
+An MS-DOS date and time, as stored in the "last mod file time" and
+"last mod file date" fields of a zip entry.
+
+`raw` has the same bit layout as those two fields read together as a
+little endian `UInt32`:
+
+| bits  | property             |
+|:------|:---------------------|
+| 0-4   | `second ÷ 2`         |
+| 5-10  | `minute`             |
+| 11-15 | `hour`               |
+| 16-20 | `day`                |
+| 21-24 | `month`              |
+| 25-31 | `year - 1980`        |
+
+`DOSDateTime()` is the default used by [`ZipWriter`](@ref): 1980-01-01 00:00:00
+
+The constructor taking the separate fields doesn't validate them.
+It just truncates each field to its bit width and packs them into `raw`.
+Seconds are stored with a 2 second resolution, so odd seconds are rounded down.
+
+The properties `year`, `month`, `day`, `hour`, `minute`, and `second` unpack
+the bit fields, with the same offsets and scaling as the constructor.
+The packed value is the `raw` property.
+"""
+struct DOSDateTime
+    raw::UInt32
+    DOSDateTime(raw::UInt32) = new(raw)
+end
+DOSDateTime() = DOSDateTime(0x0021_0000)
+function DOSDateTime(
+        year::Integer,
+        month::Integer,
+        day::Integer,
+        hour::Integer=0,
+        minute::Integer=0,
+        second::Integer=0,
+    )
+    DOSDateTime(
+        (((second%UInt32) >> 1)  & 0x1f)       |
+        ((minute%UInt32)         & 0x3f) << 5  |
+        ((hour%UInt32)           & 0x1f) << 11 |
+        ((day%UInt32)            & 0x1f) << 16 |
+        ((month%UInt32)          & 0x0f) << 21 |
+        (((year - 1980)%UInt32)  & 0x7f) << 25
+    )
+end
+function Base.getproperty(x::DOSDateTime, s::Symbol)
+    raw = getfield(x, :raw)
+    if s === :second
+        Int((raw & 0x1f) << 1)
+    elseif s === :minute
+        Int(raw >> 5 & 0x3f)
+    elseif s === :hour
+        Int(raw >> 11 & 0x1f)
+    elseif s === :day
+        Int(raw >> 16 & 0x1f)
+    elseif s === :month
+        Int(raw >> 21 & 0x0f)
+    elseif s === :year
+        Int(raw >> 25 & 0x7f) + 1980
+    else
+        getfield(x, s)
+    end
+end
+Base.propertynames(::DOSDateTime, private::Bool=false) = (:year, :month, :day, :hour, :minute, :second, :raw)
+function Base.show(io::IO, x::DOSDateTime)
+    print(io, DOSDateTime, "(", x.year, ", ", x.month, ", ", x.day, ", ", x.hour, ", ", x.minute, ", ", x.second, ")")
+end
+
 #=
 This is an internal type.
 Info about an entry in a zip file.
@@ -8,8 +84,7 @@ struct EntryInfo
     version_needed::UInt16
     bit_flags::UInt16
     method::UInt16
-    dos_time::UInt16
-    dos_date::UInt16
+    dos_datetime::DOSDateTime
     crc32::UInt32
     compressed_size::UInt64
     uncompressed_size::UInt64
@@ -37,8 +112,7 @@ Base.@kwdef mutable struct PartialEntry
     comment::String = ""
     external_attrs::UInt32 = UInt32(0o0100644)<<16 # external file attributes: https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute
     method::UInt16 = Store # compression method
-    dos_time::UInt16 = 0x0000 # last mod file time
-    dos_date::UInt16 = 0x0021 # last mod file date
+    dos_datetime::DOSDateTime = DOSDateTime() # last mod file time and date
     force_zip64::Bool = false
     offset::UInt64
     bit_flags::UInt16 = 1<<11 # general purpose bit flag: 11 UTF-8 encoding
