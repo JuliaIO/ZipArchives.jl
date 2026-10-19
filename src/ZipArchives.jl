@@ -58,6 +58,7 @@ include("constants.jl")
 include("filename-checks.jl")
 
 include("types.jl")
+export DOSDateTime
 
 include("reader.jl")
 export ZipReader
@@ -90,7 +91,6 @@ export zip_readentry
 
 include("writer.jl")
 export ZipWriter
-export DOSDateTime
 export zip_append_archive
 export zip_writefile
 export zip_newfile

@@ -209,12 +209,11 @@ These fields are not validated, so the packed values
 may not be a valid date and time, for example month 0, February 30, or hour 31.
 
 Even if valid, this might not be the true last modification time of the entry:
-- Many zip writers store a fixed placeholder, for example `ZipWriter`
+- Some zip writers store a fixed placeholder, for example `ZipWriter`
     defaults to `DOSDateTime()`, 1980-01-01 00:00:00.
-- No time zone is stored. Writers typically use their local time.
+- No time zone is stored.
 - The resolution is 2 seconds.
 - More precise timestamps that some writers store in extra fields are ignored.
-- The copy of these fields in the local header is ignored.
 
 See also [`DOSDateTime`](@ref).
 """
