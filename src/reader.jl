@@ -199,6 +199,26 @@ See also [`zip_crc32`](@ref), [`zip_test_entry`](@ref).
 """
 zip_stored_crc32(x::HasEntries, i::Integer)::UInt32 = x.entries[i].crc32
 
+"""
+    zip_dos_datetime(x::HasEntries, i::Integer)::DOSDateTime
+
+Return the raw "last mod file time" and "last mod file date" fields
+of entry `i` in the central directory.
+
+These fields are not validated, so the packed values
+may not be a valid date and time, for example month 0, February 30, or hour 31.
+
+Even if valid, this might not be the true last modification time of the entry:
+- Some zip writers store a fixed placeholder, for example `ZipWriter`
+    defaults to `DOSDateTime()`, 1980-01-01 00:00:00.
+- No time zone is stored. Writers typically use their local time.
+- The resolution is 2 seconds.
+- More precise timestamps that some writers store in extra fields are ignored.
+
+See also [`DOSDateTime`](@ref).
+"""
+zip_dos_datetime(x::HasEntries, i::Integer)::DOSDateTime = x.entries[i].dos_datetime
+
 _name_view(x::HasEntries, i::Integer) = view(x.central_dir_buffer, x.entries[i].name_range)
 
 """
@@ -628,8 +648,7 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
         version_needed = readle(io_b, UInt16) & 0x00FF
         bit_flags = readle(io_b, UInt16)
         method = readle(io_b, UInt16)
-        dos_time = readle(io_b, UInt16)
-        dos_date = readle(io_b, UInt16)
+        dos_datetime = DOSDateTime(readle(io_b, UInt32))
         crc32 = readle(io_b, UInt32)
         c_size32 = readle(io_b, UInt32)
         u_size32 = readle(io_b, UInt32)
@@ -710,8 +729,7 @@ function parse_central_directory_headers!(central_dir_buffer::Vector{UInt8}, num
             version_needed::UInt16,
             bit_flags::UInt16,
             method::UInt16,
-            dos_time::UInt16,
-            dos_date::UInt16,
+            dos_datetime::DOSDateTime,
             crc32::UInt32,
             compressed_size::UInt64,
             uncompressed_size::UInt64,
@@ -796,6 +814,7 @@ Entries are indexed from `1:zip_nentries(r)`
 1. `zip_definitely_utf8(r, i)::Bool`
 1. `zip_iscompressed(r, i)::Bool`
 1. `zip_general_purpose_bit_flag(r, i)::UInt16`
+1. `zip_dos_datetime(r, i)::DOSDateTime`
 
 `zip_test_entry(r::ZipReader, i::Integer)::Nothing` will throw an error if an entry is invalid or has a bad checksum.
 

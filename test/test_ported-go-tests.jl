@@ -110,25 +110,27 @@ end
     @test zip_names(r) == ["世界"]
     @test !zip_definitely_utf8(r, 1)
     zip_test_entry(r, 1)
-    # ZipArchives currently ignores modification time.
+    # ZipArchives currently ignores modification time in extra fields.
     files_with_different_times = [
-        "time-7zip.zip",
-        "time-infozip.zip",
-        "time-osx.zip",
-        "time-win7.zip",
-        "time-winrar.zip",
-        "time-winzip.zip",
-        "time-go.zip",
+        "time-7zip.zip" => DOSDateTime(2017, 10, 31, 21, 11, 58),
+        "time-infozip.zip" => DOSDateTime(2017, 10, 31, 21, 11, 58),
+        "time-osx.zip" => DOSDateTime(2017, 10, 31, 21, 11, 58),
+        "time-win7.zip" => DOSDateTime(2017, 10, 31, 21, 11, 58),
+        "time-winrar.zip" => DOSDateTime(2017, 10, 31, 21, 11, 56),
+        "time-winzip.zip" => DOSDateTime(2017, 10, 31, 21, 11, 58),
+        "time-go.zip" => DOSDateTime(2017, 10, 31, 21, 11, 56),
     ]
-    for filename in files_with_different_times
+    for (filename, dos_datetime) in files_with_different_times
         r = ZipBufferReader(read(testdata*filename))
         @test zip_names(r) == ["test.txt"]
         @test zip_definitely_utf8(r, 1)
+        @test zip_dos_datetime(r, 1) == dos_datetime
         zip_test_entry(r, 1)
     end
     r = ZipBufferReader(read(testdata*"time-22738.zip"))
     @test zip_names(r) == ["file"]
     @test zip_definitely_utf8(r, 1)
+    @test zip_dos_datetime(r, 1) == DOSDateTime(1999, 12, 31, 19, 0, 0)
     zip_test_entry(r, 1)
     @test read_all(read(testdata*"dupdir.zip")) == [
         "a/" => "",

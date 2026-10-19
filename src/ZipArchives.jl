@@ -58,6 +58,7 @@ include("constants.jl")
 include("filename-checks.jl")
 
 include("types.jl")
+export DOSDateTime
 
 include("reader.jl")
 export ZipReader
@@ -81,6 +82,7 @@ export zip_compression_method
 export zip_general_purpose_bit_flag
 export zip_version_made_by
 export zip_entry_data_offset
+export zip_dos_datetime
 
 export zip_test_entry
 export zip_test
